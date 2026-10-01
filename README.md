@@ -118,6 +118,8 @@ PORT=3001 LOCAL_DB=./local.db npm run local
 
 > 数据库尚未建表时，本地执行 `node scripts/init-remote.mjs`（读 `.env`，幂等可重复跑）。
 
+> 前端静态托管：Flutter Web 构建产物已入库 `public/`（Vercel Other 项目约定静态目录，与 `/api` 同域名自动共存，前端请求零 CORS）。更新前端：本地执行 `flutter build web --release --dart-define=USE_MOCK=false --dart-define=API_BASE_URL=https://<项目名>.vercel.app`，然后把 `app/build/web/*` 覆盖到 `public/` 提交推送即可。
+
 ## 路线图
 
 - [x] **第一阶段**：表结构 + 目录结构 + Actions 配置思路
