@@ -14,7 +14,21 @@ const TABLES = ['users', 'wardrobe_items', 'outfit_history', 'daily_recommendati
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   cors(req, res);
-  const db = getDb();
+
+  // getDb() 若同步抛错（最常见：环境变量复制不完整，首尾混入空格/换行），
+  // 必须接住并把真实错误透出，否则线上表现为难排查的 500 FUNCTION_INVOCATION_FAILED
+  let db: ReturnType<typeof getDb>;
+  try {
+    db = getDb();
+  } catch (e) {
+    return ok(res, {
+      mode: 'db_init_error',
+      hint: '数据库客户端初始化失败：请检查 Vercel 环境变量 TURSO_URL / TURSO_AUTH_TOKEN '
+          + '是否完整粘贴（首尾不能有空格或换行），修改环境变量后需 Redeploy 才生效。',
+      error: e instanceof Error ? e.message : String(e),
+    });
+  }
+
 
   // ---- mock 模式：环境变量未配置 ----
   if (!db) {
