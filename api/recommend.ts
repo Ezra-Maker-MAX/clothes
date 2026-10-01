@@ -91,13 +91,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const wardrobe = items.rows as unknown as WardrobeItem[];
 
     // 排重：最近 2 天穿过的单品一律避开
+    // （显式断言行类型：不依赖 @libsql/core 转发类型链，Vercel 构建更稳）
     const recent = await db.execute({
       sql: `SELECT item_ids FROM outfit_history
             WHERE user_id=? AND worn_date >= date(?, '-2 day')`,
       args: [userId, date],
     });
-    const excludeIds = recent.rows.flatMap(r => {
-      try { return JSON.parse(String(r.item_ids)) as string[]; } catch { return []; }
+    const recentRows = recent.rows as Array<Record<string, unknown>>;
+    const excludeIds = recentRows.flatMap(r => {
+      try { return JSON.parse(String(r.item_ids ?? '[]')) as string[]; } catch { return []; }
     });
 
     // 「换一套」轮换：基于已换次数在评分前三候选间轮换，确保每次换出不同组合

@@ -9,11 +9,16 @@
  * 保证"先跑通"阶段网页上也能看到数据结构。
  */
 import path from 'node:path';
-import { createClient, type Client } from '@libsql/client';
+import { createClient } from '@libsql/client';
 
-let cached: Client | null = null;
+// 不直接 import Client 类型：@libsql/client 的类型经 @libsql/core 转发导出，
+// 在 Vercel 构建环境的解析模式下该转发链可能断裂（TS2459）。
+// 用 ReturnType 推导则任何环境都稳定。
+type DbClient = ReturnType<typeof createClient>;
 
-export function getDb(): Client | null {
+let cached: DbClient | null = null;
+
+export function getDb(): DbClient | null {
   const url = process.env.TURSO_URL;
   const token = process.env.TURSO_AUTH_TOKEN;
   if (url && token) {
