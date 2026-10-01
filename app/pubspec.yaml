@@ -1,0 +1,21 @@
+name: dapei_app
+description: "「搭配测试」智能穿搭推荐 App —— 懂她、宠她、有分寸地撩她"
+publish_to: "none"
+version: 0.2.0
+
+environment:
+  sdk: ^3.9.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  http: ^1.2.0            # 第三阶段联调 Vercel API
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true

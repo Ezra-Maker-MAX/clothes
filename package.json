@@ -1,0 +1,27 @@
+{
+  "name": "dapei-app-backend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "「搭配测试」Vercel Serverless API + Turso 数据库层",
+  "scripts": {
+    "dev": "vercel dev",
+    "typecheck": "tsc --noEmit",
+    "deploy": "vercel --prod",
+    "local": "tsx scripts/dev-server.ts",
+    "seed": "node scripts/seed-local.mjs"
+  },
+  "dependencies": {
+    "@libsql/client": "^0.14.0",
+    "@vercel/blob": "^0.27.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.10.0",
+    "@vercel/node": "^5.0.0",
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.0",
+    "vercel": "^41.0.0"
+  }
+}

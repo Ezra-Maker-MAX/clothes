@@ -1,0 +1,35 @@
+# ============================================================
+# 可选：GitHub Actions 直接部署 Vercel（CLI 方式）
+#
+# 推荐优先用「Vercel Git 集成」（零配置，push 即部署，见 docs/02）。
+# 本工作流仅在以下场景启用：需要同时构建 Flutter Web 再一并部署时，
+# 由第三阶段扩展：build web → 放入 public/ → 本工作流 vercel deploy。
+#
+# 启用前需在仓库 Settings → Secrets and variables → Actions 添加：
+#   VERCEL_TOKEN    Vercel → Account Settings → Tokens
+#   VERCEL_ORG_ID   项目 .vercel/organization.json
+#   VERCEL_PROJECT_ID  项目 .vercel/project.json
+# ============================================================
+name: Deploy to Vercel
+
+on:
+  workflow_dispatch:      # 仅手动触发，避免与 Git 集成重复部署
+
+jobs:
+  deploy-web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 部署 API + Web
+        run: |
+          npm i -g vercel@latest
+          vercel pull --yes --environment=production \
+            --token=${{ secrets.VERCEL_TOKEN }}
+          vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+          vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
