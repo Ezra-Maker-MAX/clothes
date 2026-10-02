@@ -2,24 +2,27 @@
  * /api/[action] —— 统一 API 入口（单函数动态路由）
  *
  * 为什么合并：Vercel Hobby 计划限制「每个部署最多 12 个 serverless functions」，
- * api/ 顶层每文件一个函数（连 lib/ 共享文件也被计入配额），加一个接口就超限。
- * 合并为单函数 + 内部路由表后函数数恒为 1，且 URL 路径完全不变（客户端零改动）。
+ * 且实测 api/ 目录下【每个 .ts 文件都占一个函数名额】——包括没有 handler 的
+ * 共享库文件，`_` 前缀目录也不豁免。
+ * 因此业务代码全部移到 api/ 目录之外的 server/（handlers + lib），
+ * Vercel 只把根级 api/ 当函数目录：api/ 里只剩本文件 → 函数数恒为 1，
+ * 普通模块经 import 打进函数 bundle，URL 路径完全不变（客户端零改动）。
  *
  * 约定：
- * - 业务逻辑全部在 api/_handlers/（下划线开头目录不计函数配额），
- *   每个模块 `export async function handler(req, res)`，方法内自判 GET/POST/PATCH/DELETE；
- * - 新增接口两步：_handlers/ 加模块 + 下方 routes 注册一行；
+ * - 业务逻辑全部在 server/handlers/，每个模块
+ *   `export async function handler(req, res)`，方法内自判 GET/POST/PATCH/DELETE；
+ * - 新增接口两步：server/handlers/ 加模块 + 下方 routes 注册一行；
  * - 访问路径不变：/api/recommend、/api/wardrobe、/api/health …
  */
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { cors, fail } from './_lib/http';
-import * as recommend from './_handlers/recommend';
-import * as wardrobe from './_handlers/wardrobe';
-import * as categories from './_handlers/categories';
-import * as history from './_handlers/history';
-import * as upload from './_handlers/upload';
-import * as importOrder from './_handlers/import-order';
-import * as health from './_handlers/health';
+import { cors, fail } from '../server/lib/http';
+import * as recommend from '../server/handlers/recommend';
+import * as wardrobe from '../server/handlers/wardrobe';
+import * as categories from '../server/handlers/categories';
+import * as history from '../server/handlers/history';
+import * as upload from '../server/handlers/upload';
+import * as importOrder from '../server/handlers/import-order';
+import * as health from '../server/handlers/health';
 
 type Handler = (req: VercelRequest, res: VercelResponse) => Promise<unknown> | unknown;
 
