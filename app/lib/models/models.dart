@@ -64,6 +64,8 @@ class ItemInfo {
     required this.categoryLabel,
     this.categoryId = '',
     this.imageUrl,
+    this.imageUrls = const [],
+    this.pinned = false,
     this.colorName,
     this.lastWornAt,
     this.brand,
@@ -76,7 +78,9 @@ class ItemInfo {
   final String categoryLabel; // 上衣 / 裤装 / 鞋子（动态分类翻译后的展示名）
   final String categoryId;    // 分类 id（编辑回显/表单提交用；空 = mock 数据）
   final String emoji;         // 分类默认 emoji；有 imageUrl 时卡片优先网络图
-  final String? imageUrl;     // Vercel Blob URL（第三阶段衣橱上传后回填）
+  final String? imageUrl;     // 主图 URL（Vercel Blob）
+  final List<String> imageUrls; // 多图列表（P0：主图+辅助图；详情页横滑画廊用）
+  final bool pinned;          // 置顶（衣橱列表排序优先）
   final String? colorName;
   final String? lastWornAt;   // 最近一次上身穿的日期（null = 还没上过身，衣橱页统计用）
   final String? brand;        // 品牌（手动录入可选填）
@@ -89,6 +93,23 @@ class ItemInfo {
     if (wearCount <= 0) return '—';
     final v = price! / wearCount;
     return '¥${v.toStringAsFixed(v < 100 ? 1 : 0)}';
+  }
+
+  /// 展示图列表：多图优先，回退主图，再回退空（调用方显示 emoji 占位）
+  List<String> get gallery {
+    if (imageUrls.isNotEmpty) return imageUrls;
+    if (imageUrl != null && imageUrl!.startsWith('http')) return [imageUrl!];
+    return const [];
+  }
+
+  ItemInfo copyWith({bool? pinned, List<String>? imageUrls, String? imageUrl}) {
+    return ItemInfo(
+      id: id, name: name, emoji: emoji, categoryLabel: categoryLabel,
+      categoryId: categoryId, imageUrl: imageUrl ?? this.imageUrl,
+      imageUrls: imageUrls ?? this.imageUrls, pinned: pinned ?? this.pinned,
+      colorName: colorName, lastWornAt: lastWornAt, brand: brand,
+      wearCount: wearCount, price: price,
+    );
   }
 
   /// 图卡底色：按分类给莫兰迪渐变

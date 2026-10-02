@@ -1,6 +1,8 @@
 // 首页：问候区 → 天气卡片 → 今日推荐 → 统计卡片
 // 第三阶段：真实模式从 /api/recommend + /api/history + /api/wardrobe 取数，
 // 并带 loading / error 两种状态，文案遵循「嘴快心细、不油腻」的调性。
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../models/models.dart';
@@ -8,6 +10,7 @@ import '../services/api_client.dart';
 import '../services/mock_data.dart';
 import '../theme/app_colors.dart';
 import '../widgets/greeting_header.dart';
+import 'settings_page.dart';
 import '../widgets/recommend_card.dart';
 import '../widgets/stats_row.dart';
 import '../widgets/weather_card.dart';
@@ -72,8 +75,8 @@ class _HomePageState extends State<HomePage> {
     try {
       final next = await ApiClient.getRecommendation(refresh: true);
       if (mounted) setState(() => _outfit = next);
-    } catch (_) {
-      _toast('换不动了，网络开了点小差，待会儿再试');
+    } catch (e) {
+      _toast('换不动了：${_shortError(e)}');
     } finally {
       if (mounted) setState(() => _swapping = false);
     }
@@ -96,9 +99,18 @@ class _HomePageState extends State<HomePage> {
         }
       }
       _toast('已记入今日穿搭。这身不显腰，但只要你一走路，它就会出卖你。');
-    } catch (_) {
-      _toast('记不进去，网络开了点小差，待会儿再点');
+    } catch (e) {
+      _toast('记不进去：${_shortError(e)}');
     }
+  }
+
+  /// 异常 → 简短可读文案（toast 用）：超时给友好解释，其余截断透出真实原因，
+  /// 便于远程诊断（截图就能看到是超时还是 5xx）。
+  String _shortError(Object e) {
+    if (e is TimeoutException) return '等太久了，新搭配还没生成完（换一套要走天气+灵感全流程，约 10~20 秒），稍等再试';
+    var msg = e.toString().replaceFirst(RegExp(r'^Exception:\s*'), '');
+    if (msg.length > 90) msg = '${msg.substring(0, 90)}…';
+    return msg;
   }
 
   void _toast(String msg) {
@@ -178,6 +190,10 @@ class _HomePageState extends State<HomePage> {
           weather: _outfit.weather,
           greeting: MockData.greeting(now),
           tip: MockData.greetingTip(now),
+          onAvatarTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const SettingsPage()),
+          ),
         ),
         const SizedBox(height: 16),
         WeatherCard(weather: _outfit.weather),

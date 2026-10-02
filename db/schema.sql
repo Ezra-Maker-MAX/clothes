@@ -59,7 +59,9 @@ CREATE TABLE IF NOT EXISTS wardrobe_items (
                 -- 正式度 1~5：1=居家 2=日常 3=通勤 4=约会 5=面试/正装
   brand         TEXT,
   price         NUMERIC,                         -- 购入价格（元），惰性迁移列（ensureSchema 自动 ADD）
-  source        TEXT NOT NULL DEFAULT 'upload',  -- 来源: upload/ai_generated
+  image_urls    TEXT,                            -- 多图 JSON 数组字符串，惰性迁移列；主图仍为 image_url
+  pinned        INTEGER NOT NULL DEFAULT 0,      -- 1 = 置顶，惰性迁移列（列表排序优先）
+  source        TEXT NOT NULL DEFAULT 'upload',  -- 来源: upload/ai_generated/import
   tags          TEXT,                            -- 自由标签 JSON
   wear_count    INTEGER NOT NULL DEFAULT 0,      -- 累计穿着次数 → 首页"未穿单品"统计
   last_worn_at  TEXT,                            -- 最后穿着日期 YYYY-MM-DD → 排重核心字段

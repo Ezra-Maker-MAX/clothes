@@ -2,7 +2,12 @@
  * /api/upload —— 衣橱单品图片上传（Vercel Blob）
  *
  * POST body(JSON): { filename, contentType, dataBase64 }
- *   → 返回 { url }，Flutter 端拿到后调 POST /api/wardrobe 落库
+ *   → 返回 { url, cutoutUrl? }，Flutter 端拿到后调 POST /api/wardrobe 落库
+ *
+ * AI 抠图挂载点（已接通，env 可选配置，未配置/失败一律静默降级为原图，绝不阻断上传）：
+ *   REMBG_API_URL     通用自部署抠图端点：POST 图片二进制 → 返回透明 PNG 二进制
+ *   REMOVE_BG_API_KEY remove.bg 官方 API Key（https://www.remove.bg/dashboard#api-key）
+ *   两者都配时优先 REMBG_API_URL（自有服务优先，省第三方额度）
  *
  * ⚠️ 环境变量：BLOB_READ_WRITE_TOKEN
  *   在 Vercel 项目 → Storage → Create Blob Store → Connect，会自动注入，
@@ -17,17 +22,69 @@ import { put } from '@vercel/blob';
 import { cors, ok, fail } from './lib/http';
 import { uuid } from './lib/db';
 
+/** 抠图超时：8s 拿不到就当没有，主链路（原图）早已落 Blob 成功 */
+const CUTOUT_TIMEOUT_MS = 8000;
+
+/** 调抠图服务返回透明 PNG；任何失败返回 null（调用方降级原图） */
+async function cutout(buf: Buffer): Promise<Buffer | null> {
+  try {
+    let r: Response;
+    if (process.env.REMBG_API_URL) {
+      // 通用自部署端点：POST bytes → PNG bytes
+      r = await fetch(process.env.REMBG_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/octet-stream' },
+        body: new Uint8Array(buf),
+        signal: AbortSignal.timeout(CUTOUT_TIMEOUT_MS),
+      });
+    } else if (process.env.REMOVE_BG_API_KEY) {
+      // remove.bg 官方 API（multipart form）
+      const form = new FormData();
+      form.append('image_file', new Blob([new Uint8Array(buf)]), 'image.jpg');
+      form.append('size', 'auto');
+      r = await fetch('https://api.remove.bg/v1.0/removebg', {
+        method: 'POST',
+        headers: { 'X-Api-Key': process.env.REMOVE_BG_API_KEY },
+        body: form,
+        signal: AbortSignal.timeout(CUTOUT_TIMEOUT_MS),
+      });
+    } else {
+      return null; // 未配置 → 抠图关闭，原图直出
+    }
+    if (!r.ok) {
+      console.warn('[upload] 抠图失败（降级原图）：HTTP', r.status);
+      return null;
+    }
+    const out = Buffer.from(await r.arrayBuffer());
+    // 透明 PNG 至少不会小于几 KB；异常小体积极可能是错误页
+    return out.length > 1024 ? out : null;
+  } catch (e) {
+    console.warn('[upload] 抠图异常（降级原图）：', e instanceof Error ? e.message : e);
+    return null;
+  }
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   cors(req, res);
 
   if (req.method === 'GET') {
-    // 状态自检：让前端/浏览器能快速判断存储是否就绪
+    // 状态自检：让前端/浏览器能快速判断存储与抠图是否就绪
+    const cutoutProvider = process.env.REMBG_API_URL
+      ? 'self-hosted (REMBG_API_URL)'
+      : process.env.REMOVE_BG_API_KEY
+        ? 'remove.bg'
+        : null;
     return ok(res, {
       storage: 'vercel-blob',
       ready: Boolean(process.env.BLOB_READ_WRITE_TOKEN),
       hint: process.env.BLOB_READ_WRITE_TOKEN
         ? 'Blob 已就绪'
         : '缺少 BLOB_READ_WRITE_TOKEN：在 Vercel → Storage → Blob 创建并连接后自动注入',
+      cutout: {
+        ready: Boolean(cutoutProvider),
+        provider: cutoutProvider,
+        hint: cutoutProvider ? '抠图已开启，失败自动降级原图' : '未配置抠图（可选）：设 REMBG_API_URL 或 REMOVE_BG_API_KEY',
+      },
     });
   }
 
@@ -47,8 +104,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       addRandomSuffix: false,
     });
 
-    // 后续接抠图 API 的挂载点：blob.url → 第三方抠图 → 回写 thumbnail_url
-    return ok(res, { url: blob.url, size: buf.length });
+    // AI 抠图：成功则把透明 PNG 也落 Blob（原 blob.url 已在手，失败静默降级）
+    let cutoutUrl: string | null = null;
+    const cut = await cutout(buf);
+    if (cut) {
+      const cutBlob = await put(`wardrobe/${uuid()}-cutout.png`, cut, {
+        access: 'public',
+        contentType: 'image/png',
+        addRandomSuffix: false,
+      });
+      cutoutUrl = cutBlob.url;
+    }
+
+    return ok(res, { url: blob.url, cutoutUrl, size: buf.length });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     const hint = msg.includes('BLOB_READ_WRITE_TOKEN') || msg.includes('No token')

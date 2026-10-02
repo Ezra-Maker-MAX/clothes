@@ -37,12 +37,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!db) return ok(res, { mode: 'mock', items: MOCK_ITEMS });
 
     try {
-      await ensureSchema(); // price 列惰性迁移（已存在则忽略）
+      await ensureSchema(); // price/image_urls/pinned 列惰性迁移（已存在则忽略）
       const r = await db.execute({
         sql: `SELECT * FROM wardrobe_items
               WHERE user_id = ? AND status = 'active'
               ${category ? 'AND category = ?' : ''}
-              ORDER BY created_at DESC LIMIT 200`,
+              ORDER BY pinned DESC, created_at DESC LIMIT 200`,
         args: category ? [userId, category] : [userId],
       });
       return ok(res, { mode: 'turso', items: r.rows });
@@ -64,11 +64,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const id = uuid();
       await db.execute({
         sql: `INSERT INTO wardrobe_items
-              (id, user_id, name, image_url, thumbnail_url, category, sub_category,
+              (id, user_id, name, image_url, thumbnail_url, image_urls, pinned, category, sub_category,
                color_name, color_hex, color_family, pattern, warmth_level, formality, brand, price, source)
-              VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+              VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         args: [
-          id, b.userId, b.name, b.imageUrl, b.thumbnailUrl ?? null, b.category,
+          id, b.userId, b.name, b.imageUrl, b.thumbnailUrl ?? null,
+          Array.isArray(b.imageUrls) && b.imageUrls.length
+            ? JSON.stringify(b.imageUrls) : null,
+          b.pinned ? 1 : 0,
+          b.category,
           b.subCategory ?? null, b.colorName ?? null, b.colorHex ?? null,
           b.colorFamily ?? null, b.pattern ?? null,
           Number(b.warmthLevel ?? 2), Number(b.formality ?? 2),
@@ -88,7 +92,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!b.id) return fail(res, 400, '缺少 id');
     if (!db) return ok(res, { mode: 'mock', message: 'mock 模式：未落库' });
 
-    // 只更新传入的字段（name/category/colorName/brand/price/imageUrl）
+    // 只更新传入的字段（name/category/colorName/brand/price/imageUrl/imageUrls/pinned）
     const sets: string[] = [];
     const args: (string | number | null)[] = [];
     if (b.name) { sets.push('name = ?'); args.push(String(b.name)); }
@@ -96,7 +100,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (b.colorName !== undefined) { sets.push('color_name = ?'); args.push(b.colorName ? String(b.colorName) : null); }
     if (b.brand !== undefined) { sets.push('brand = ?'); args.push(b.brand ? String(b.brand) : null); }
     if (b.price !== undefined) { sets.push('price = ?'); args.push(b.price === null || b.price === '' ? null : Number(b.price)); }
-    if (b.imageUrl) { sets.push('image_url = ?'); args.push(String(b.imageUrl)); }
+    if (b.imageUrl !== undefined) {
+      // 允许空串清空主图（列 NOT NULL，空串即"无主图"，客户端回退 emoji 占位）
+      sets.push('image_url = ?'); args.push(b.imageUrl ? String(b.imageUrl) : '');
+    }
+    if (b.imageUrls !== undefined) {
+      sets.push('image_urls = ?');
+      args.push(Array.isArray(b.imageUrls) && b.imageUrls.length
+        ? JSON.stringify(b.imageUrls) : null);
+    }
+    if (b.pinned !== undefined) { sets.push('pinned = ?'); args.push(b.pinned ? 1 : 0); }
     if (!sets.length) return fail(res, 400, '没有需要更新的字段');
 
     try {

@@ -12,6 +12,8 @@ dependencies:
   cupertino_icons: ^1.0.8
   http: ^1.2.0            # 第三阶段联调 Vercel API
   file_picker: ^13.1.0
+  shared_preferences: ^2.5.5
+  share_plus: ^13.3.1
 
 dev_dependencies:
   flutter_test:

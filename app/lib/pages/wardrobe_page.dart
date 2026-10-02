@@ -2,7 +2,14 @@
 // 统计标题 + 动态分类 tab + 网格/列表视图 + 排序 + 搜索 + 底部「添加单品」胶囊
 // 第三阶段：真实模式从 /api/wardrobe 拉取真实单品；卡片点进详情页；
 // 分类管理（增删改/拖拽排序）、搜索、价格展示一应俱全。
+// P0/P1：置顶优先（详情页 pin 联动）、按颜色排序、离屏海报分享。
+import 'dart:io';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../models/models.dart';
 import '../services/api_client.dart';
@@ -12,7 +19,7 @@ import '../widgets/category_manage_sheet.dart';
 import '../widgets/item_form_sheet.dart';
 import 'item_detail_page.dart';
 
-enum _SortMode { newest, mostWorn, recentWorn }
+enum _SortMode { newest, mostWorn, recentWorn, byColor }
 
 class WardrobePage extends StatefulWidget {
   const WardrobePage({super.key});
@@ -36,6 +43,11 @@ class _WardrobePageState extends State<WardrobePage> {
 
   List<ItemInfo> _items = MockData.wardrobe; // 真实模式立即被 _load 替换
   bool get _real => !ApiClient.useMock;
+
+  // ---- 海报分享（P1）：离屏渲染 → RepaintBoundary 截图 → 系统分享 ----
+  final GlobalKey _posterKey = GlobalKey();
+  bool _posterReady = false;
+  List<ItemInfo> _posterItems = const [];
 
   @override
   void initState() {
@@ -87,16 +99,34 @@ class _WardrobePageState extends State<WardrobePage> {
           (i.colorName ?? '').contains(_query));
     }
     final result = list.toList();
+    // 各排序均为「置顶优先」：pinned 在前，其余按所选键
+    int pinCmp(ItemInfo a, ItemInfo b) =>
+        (b.pinned ? 1 : 0).compareTo(a.pinned ? 1 : 0);
     switch (_sort) {
       case _SortMode.newest:
-        break; // 服务端默认 created_at DESC（最近添加在前）
+        result.sort(pinCmp); // 次级键保持现有相对顺序（服务端 created_at DESC）
       case _SortMode.mostWorn:
-        result.sort((a, b) => b.wearCount.compareTo(a.wearCount));
+        result.sort((a, b) {
+          final c = pinCmp(a, b);
+          return c != 0 ? c : b.wearCount.compareTo(a.wearCount);
+        });
       case _SortMode.recentWorn:
         result.sort((a, b) {
-          final av = a.lastWornAt ?? '';
-          final bv = b.lastWornAt ?? '';
-          return bv.compareTo(av); // null（''）自然沉底
+          final c = pinCmp(a, b);
+          if (c != 0) return c;
+          return (b.lastWornAt ?? '').compareTo(a.lastWornAt ?? '');
+        });
+      case _SortMode.byColor:
+        result.sort((a, b) {
+          final c = pinCmp(a, b);
+          if (c != 0) return c;
+          // 颜色名排序（无颜色沉底），同色按名称
+          final av = a.colorName, bv = b.colorName;
+          if (av == null && bv == null) return a.name.compareTo(b.name);
+          if (av == null) return 1;
+          if (bv == null) return -1;
+          final c2 = av.compareTo(bv);
+          return c2 != 0 ? c2 : a.name.compareTo(b.name);
         });
     }
     return result;
@@ -109,21 +139,143 @@ class _WardrobePageState extends State<WardrobePage> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return Stack(
       children: [
-        _header(),
-        if (_searching) _searchBar(),
-        _categoryTabs(),
-        Expanded(
-          child: _loading
-              ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
-              : _listView
-                  ? _list()
-                  : _grid(),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _header(),
+            if (_searching) _searchBar(),
+            _categoryTabs(),
+            Expanded(
+              child: _loading
+                  ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
+                  : _listView
+                      ? _list()
+                      : _grid(),
+            ),
+            _addButton(),
+          ],
         ),
-        _addButton(),
+        // 离屏海报：移出可视区但保持渲染，截图后即隐藏
+        if (_posterReady)
+          Positioned(left: -2000, top: 0, child: RepaintBoundary(key: _posterKey, child: _posterWidget())),
       ],
+    );
+  }
+
+  /// 生成衣橱海报（前 9 件单品九宫格）→ 系统分享面板，本地出图不落云端
+  Future<void> _sharePoster() async {
+    final withImg = _filtered
+        .where((i) => i.imageUrl != null && i.imageUrl!.startsWith('http'))
+        .toList();
+    final noImg = _filtered
+        .where((i) => !(i.imageUrl != null && i.imageUrl!.startsWith('http')))
+        .toList();
+    final picks = [...withImg, ...noImg].take(9).toList();
+    if (picks.isEmpty) {
+      _toast('衣橱还是空的，先加几件再晒');
+      return;
+    }
+    setState(() {
+      _posterItems = picks;
+      _posterReady = true;
+    });
+    try {
+      await WidgetsBinding.instance.endOfFrame; // 等离屏海报完成一帧渲染
+      final boundary =
+          _posterKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+      if (boundary == null) throw Exception('海报没渲染出来');
+      final image = await boundary.toImage(pixelRatio: 3);
+      final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+      if (bytes == null) throw Exception('截图失败');
+      final data = Uint8List.view(bytes.buffer);
+      final f = File(
+          '${Directory.systemTemp.path}/wardrobe_poster_${DateTime.now().millisecondsSinceEpoch}.png');
+      await f.writeAsBytes(data);
+      await SharePlus.instance
+          .share(ShareParams(files: [XFile(f.path)], text: '我的衣橱 · 来自「衣念」'));
+    } catch (e) {
+      _toast('海报没生成出来：${e.toString().substring(0, e.toString().length.clamp(0, 60))}');
+    } finally {
+      if (mounted) setState(() => _posterReady = false);
+    }
+  }
+
+  /// 海报本体：紫渐变头 + 九宫格 + 署名（固定 340 宽，3x pixelRatio 出高清图）
+  Widget _posterWidget() {
+    final now = DateTime.now();
+    return Container(
+      width: 340,
+      color: Colors.white,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(18),
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Color(0xFF9C87C9), AppColors.primary],
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('我的衣橱',
+                    style: TextStyle(
+                        fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white)),
+                const SizedBox(height: 4),
+                Text(
+                  '${now.year}年${now.month}月${now.day}日 · ${_items.length} 件单品 · 穿搭日记第 ${now.month} 月',
+                  style: TextStyle(
+                      fontSize: 11.5, color: Colors.white.withValues(alpha: 0.85)),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: GridView.count(
+              crossAxisCount: 3,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              mainAxisSpacing: 8,
+              crossAxisSpacing: 8,
+              childAspectRatio: 0.75,
+              children: [for (final it in _posterItems) _posterCell(it)],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(left: 14, bottom: 14),
+            child: Text('衣念 · AI 穿搭助手',
+                style: TextStyle(fontSize: 10.5, color: AppColors.textHint)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _posterCell(ItemInfo it) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        color: AppColors.bg,
+        alignment: Alignment.center,
+        child: it.imageUrl != null && it.imageUrl!.startsWith('http')
+            ? Image.network(
+                it.imageUrl!,
+                fit: BoxFit.cover,
+                width: double.infinity,
+                height: double.infinity,
+                errorBuilder: (_, __, ___) =>
+                    Text(it.emoji, style: const TextStyle(fontSize: 30)),
+              )
+            : Text(it.emoji, style: const TextStyle(fontSize: 30)),
+      ),
     );
   }
 
@@ -190,6 +342,10 @@ class _WardrobePageState extends State<WardrobePage> {
                     _sort = _SortMode.mostWorn;
                   case 'recentWorn':
                     _sort = _SortMode.recentWorn;
+                  case 'byColor':
+                    _sort = _SortMode.byColor;
+                  case 'sharePoster':
+                    _sharePoster();
                 }
               });
             },
@@ -200,7 +356,9 @@ class _WardrobePageState extends State<WardrobePage> {
               const PopupMenuItem(value: 'newest', child: _MenuRow(Icons.schedule_rounded, '按最近添加')),
               const PopupMenuItem(value: 'mostWorn', child: _MenuRow(Icons.local_fire_department_rounded, '按最常穿')),
               const PopupMenuItem(value: 'recentWorn', child: _MenuRow(Icons.history_rounded, '按最近穿着')),
+              const PopupMenuItem(value: 'byColor', child: _MenuRow(Icons.palette_rounded, '按颜色')),
               const PopupMenuDivider(),
+              const PopupMenuItem(value: 'sharePoster', child: _MenuRow(Icons.ios_share_rounded, '分享衣橱海报')),
               const PopupMenuItem(value: 'manageCats', child: _MenuRow(Icons.category_rounded, '管理分类')),
             ],
           ),
@@ -292,39 +450,48 @@ class _WardrobePageState extends State<WardrobePage> {
         final item = items[i];
         return GestureDetector(
           onTap: () => _openDetail(item),
-          child: Container(
-            decoration: BoxDecoration(
-              color: AppColors.card,
-              borderRadius: BorderRadius.circular(14),
-              boxShadow: AppColors.softShadow,
-            ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Expanded(
-                  child: ClipRRect(
-                    borderRadius:
-                        const BorderRadius.vertical(top: Radius.circular(14)),
-                    child: SizedBox(
-                      width: double.infinity,
-                      child: _itemVisual(item, emojiSize: 42),
+          child: Stack(
+            children: [
+              Container(
+                decoration: BoxDecoration(
+                  color: AppColors.card,
+                  borderRadius: BorderRadius.circular(14),
+                  boxShadow: AppColors.softShadow,
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Expanded(
+                      child: ClipRRect(
+                        borderRadius:
+                            const BorderRadius.vertical(top: Radius.circular(14)),
+                        child: SizedBox(
+                          width: double.infinity,
+                          child: _itemVisual(item, emojiSize: 42),
+                        ),
+                      ),
                     ),
-                  ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(6, 6, 6, 0),
+                      child: Text(item.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.textMain)),
+                    ),
+                    Text('${item.categoryLabel} · ${item.colorName ?? ''}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 10, color: AppColors.textSub)),
+                    const SizedBox(height: 8),
+                  ],
                 ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(6, 6, 6, 0),
-                  child: Text(item.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.textMain)),
+              ),
+              if (item.pinned)
+                const Positioned(
+                  left: 6, top: 6,
+                  child: Icon(Icons.push_pin_rounded, size: 14, color: AppColors.accent),
                 ),
-                Text('${item.categoryLabel} · ${item.colorName ?? ''}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 10, color: AppColors.textSub)),
-                const SizedBox(height: 8),
-              ],
-            ),
+            ],
           ),
         );
       },
@@ -378,11 +545,21 @@ class _WardrobePageState extends State<WardrobePage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(item.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                              fontSize: 13.5, fontWeight: FontWeight.w600, color: AppColors.textMain)),
+                      Row(
+                        children: [
+                          if (item.pinned) ...[
+                            const Icon(Icons.push_pin_rounded, size: 12, color: AppColors.accent),
+                            const SizedBox(width: 4),
+                          ],
+                          Expanded(
+                            child: Text(item.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                    fontSize: 13.5, fontWeight: FontWeight.w600, color: AppColors.textMain)),
+                          ),
+                        ],
+                      ),
                       const SizedBox(height: 3),
                       Text(
                         '${item.categoryLabel}${item.colorName == null ? '' : ' · ${item.colorName}'}${item.brand == null ? '' : ' · ${item.brand}'}',

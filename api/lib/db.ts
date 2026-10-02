@@ -77,6 +77,16 @@ export async function ensureSchema(): Promise<void> {
     } catch {
       // duplicate column name → 已迁移过，忽略
     }
+    try {
+      await db.execute(`ALTER TABLE wardrobe_items ADD COLUMN image_urls TEXT`);
+    } catch {
+      // 已迁移过
+    }
+    try {
+      await db.execute(`ALTER TABLE wardrobe_items ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0`);
+    } catch {
+      // 已迁移过
+    }
     schemaReady = true;
   } catch (e) {
     // 迁移失败不阻断请求：调用方各自降级（分类用内置、价格不展示）

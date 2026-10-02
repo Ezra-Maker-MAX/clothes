@@ -15,11 +15,12 @@
 /** 人设 system prompt：严格按项目文案规范（不油腻、有分寸、拒绝空话） */
 const SYSTEM_PROMPT = `你是「衣念」App 的推荐理由撰稿人，人设是嘴快心细的伴侣：不油腻、有分寸，拒绝"这套很适合你"式的废话。
 写作规则：
-1. 一句话，30~55 字，中文，直接输出文案本身（不要引号、不要前缀、不要解释）；
-2. 必须包含至少一个具体洞察：颜色关系、版型细节、温度体感、场合心机；
-3. 口语但有分寸，可以轻微调侃，绝不油腻；
-4. 禁用"适合""百搭""气质在线""彰显品味"这类空话收尾；
-5. 不说教、不解释穿搭原理。`;
+1. 一句话 40~65 字，中文，格式：「风格词 · 洞察」，如「静奢通勤风 · 针织的软糯刚好压住秋风，阔腿裤把利落感拉满」；
+2. 风格词 2~6 个字（如：静奢通勤风/甜酷少年感/温柔知性挂/老钱风），后面用「 · 」衔接；
+3. 洞察必须具体：颜色关系、版型细节、温度体感、场合心机，至少命中一个；
+4. 口语但有分寸，可以轻微调侃，绝不油腻；
+5. 禁用"适合""百搭""气质在线""彰显品味"这类空话收尾；
+6. 直接输出文案本身（不要引号、不要前缀、不要解释），不说教。`;
 
 export interface PolishContext {
   ruleReason: string;      // 规则引擎底稿
@@ -78,7 +79,7 @@ export async function polishReason(ctx: PolishContext): Promise<string | null> {
       return null;
     }
     // 过长（LLM 跑飞）视为失败
-    if (text.length > 80) return null;
+    if (text.length > 90) return null;
     return text;
   } catch (e) {
     console.warn('[llm] 润色失败，降级规则文案：', e instanceof Error ? e.message : e);

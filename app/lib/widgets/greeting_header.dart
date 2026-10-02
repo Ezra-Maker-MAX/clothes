@@ -5,11 +5,20 @@ import '../models/models.dart';
 import '../theme/app_colors.dart';
 
 class GreetingHeader extends StatelessWidget {
-  const GreetingHeader({super.key, required this.weather, required this.greeting, required this.tip});
+  const GreetingHeader({
+    super.key,
+    required this.weather,
+    required this.greeting,
+    required this.tip,
+    this.onAvatarTap,
+  });
 
   final WeatherInfo weather;
   final String greeting;
   final String tip;
+
+  /// 头像可点：进设置页（null 则不响应点击）
+  final VoidCallback? onAvatarTap;
 
   @override
   Widget build(BuildContext context) {
@@ -48,27 +57,50 @@ class GreetingHeader extends StatelessWidget {
               ],
             ),
           ),
-          // 右：圆形头像
-          Container(
-            width: 52,
-            height: 52,
-            decoration: const BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [Color(0xFF9C87C9), AppColors.primary],
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Color(0x22715F9B),
-                  blurRadius: 12,
-                  offset: Offset(0, 4),
+          // 右：圆形头像（点进设置），右上角齿轮角标提示可点
+          GestureDetector(
+            onTap: onAvatarTap,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Container(
+                  width: 52,
+                  height: 52,
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [Color(0xFF9C87C9), AppColors.primary],
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Color(0x22715F9B),
+                        blurRadius: 12,
+                        offset: Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  alignment: Alignment.center,
+                  child: const Text('👸', style: TextStyle(fontSize: 26)),
+                ),
+                Positioned(
+                  right: -3, top: -3,
+                  child: Container(
+                    padding: const EdgeInsets.all(3),
+                    decoration: const BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: AppColors.card,
+                      boxShadow: [
+                        BoxShadow(color: Color(0x22715F9B), blurRadius: 6),
+                      ],
+                    ),
+                    child: const Icon(Icons.settings_rounded,
+                        size: 12, color: AppColors.textSub),
+                  ),
                 ),
               ],
             ),
-            alignment: Alignment.center,
-            child: const Text('👸', style: TextStyle(fontSize: 26)),
           ),
         ],
       ),

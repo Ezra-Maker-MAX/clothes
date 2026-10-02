@@ -19,13 +19,15 @@ class ItemFormSheet extends StatefulWidget {
 }
 
 class _ItemFormSheetState extends State<ItemFormSheet> {
+  static const int _maxImages = 5;
+
   late final bool _isEdit = widget.item != null;
   List<CategoryInfo> _cats = ApiClient.builtinCategories; // initState 异步替换为动态
   late String _catId;
   bool _saving = false;
   bool _uploading = false;
-  String? _imageUrl; // 已上传的图片 URL（预览 + 提交）
-  Uint8List? _previewBytes; // 本地预览（上传期间显示）
+  List<String> _imageUrls = []; // 已上传的图片 URL 列表（第一张即主图）
+  Uint8List? _previewBytes; // 本次上传中的本地预览
 
   late final _nameCtrl = TextEditingController(text: widget.item?.name ?? '');
   late final _colorCtrl = TextEditingController(text: widget.item?.colorName ?? '');
@@ -37,6 +39,13 @@ class _ItemFormSheetState extends State<ItemFormSheet> {
   void initState() {
     super.initState();
     _catId = widget.item?.categoryId ?? 'tops';
+    // 多图回显：旧数据只有单图也进列表首位
+    final it = widget.item;
+    if (it != null) {
+      _imageUrls = it.imageUrls.isNotEmpty
+          ? List.of(it.imageUrls)
+          : (it.imageUrl != null && it.imageUrl!.isNotEmpty ? [it.imageUrl!] : []);
+    }
     _loadCategories();
   }
 
@@ -61,8 +70,13 @@ class _ItemFormSheetState extends State<ItemFormSheet> {
     super.dispose();
   }
 
-  /// 选图 → 上传 Blob → 本地预览（compressionQuality 顺带压缩大图）
+  /// 选图 → 上传 Blob → 加入多图列表（compressionQuality 顺带压缩大图）
+  /// 服务端若配置了 AI 抠图，cutoutUrl（去背 PNG）优先作为主图
   Future<void> _pickImage() async {
+    if (_imageUrls.length >= _maxImages) {
+      _snack('最多 $_maxImages 张图，删一张再加');
+      return;
+    }
     final file = await FilePicker.pickFile(
       type: FileType.image,
       compressionQuality: 70,
@@ -74,15 +88,17 @@ class _ItemFormSheetState extends State<ItemFormSheet> {
       _uploading = true;
     });
     try {
-      final url = await ApiClient.uploadImage(
+      final r = await ApiClient.uploadImage(
         bytes: bytes,
         filename: file.name,
         contentType: file.extension == 'png' ? 'image/png' : 'image/jpeg',
       );
-      if (mounted) setState(() => _imageUrl = url);
+      final finalUrl = r.cutoutUrl ?? r.url; // 去背图优先当主图
+      if (mounted && finalUrl.isNotEmpty) {
+        setState(() => _imageUrls.add(finalUrl));
+      }
     } catch (e) {
       if (mounted) {
-        _previewBytes = null;
         var msg = e.toString().replaceFirst(RegExp(r'^Exception:\s*'), '');
         if (msg.length > 80) msg = '${msg.substring(0, 80)}…';
         _snack('图片没传上：$msg');
@@ -105,6 +121,8 @@ class _ItemFormSheetState extends State<ItemFormSheet> {
     setState(() => _saving = true);
     try {
       final price = double.tryParse(_priceCtrl.text.trim());
+      // 主图 = 多图第一张；列表为空时传空串让服务端清掉旧主图
+      final mainUrl = _imageUrls.isEmpty ? '' : _imageUrls.first;
       if (_isEdit) {
         await ApiClient.updateWardrobeItem(
           id: widget.item!.id,
@@ -113,7 +131,8 @@ class _ItemFormSheetState extends State<ItemFormSheet> {
           colorName: _colorCtrl.text.trim(),
           brand: _brandCtrl.text.trim(),
           price: price,
-          imageUrl: _imageUrl,
+          imageUrl: mainUrl,
+          imageUrls: _imageUrls,
         );
       } else {
         await ApiClient.addWardrobeItem(
@@ -122,7 +141,8 @@ class _ItemFormSheetState extends State<ItemFormSheet> {
           colorName: _colorCtrl.text.trim(),
           brand: _brandCtrl.text.trim(),
           price: price,
-          imageUrl: _imageUrl,
+          imageUrl: _imageUrls.isEmpty ? null : _imageUrls.first,
+          imageUrls: _imageUrls,
         );
       }
       if (mounted) Navigator.pop(context, true);
@@ -172,33 +192,98 @@ class _ItemFormSheetState extends State<ItemFormSheet> {
             ),
             const SizedBox(height: 4),
 
-            // ---- 图片（点击选图，选完本地预览） ----
-            GestureDetector(
-              onTap: _uploading ? null : _pickImage,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(14),
-                child: Container(
-                  height: 120,
-                  width: double.infinity,
-                  color: AppColors.bg,
-                  child: _uploading
-                      ? const Center(
-                          child: SizedBox(
-                              width: 22,
-                              height: 22,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary)))
-                      : _previewBytes != null
-                          ? Image.memory(_previewBytes!, fit: BoxFit.cover)
-                          : _imageUrl != null
-                              ? Image.network(_imageUrl!, fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) => const Center(
-                                      child: Text('📷 点击选一张图（可选）',
-                                          style: TextStyle(fontSize: 12.5, color: AppColors.textHint))))
-                              : const Center(
-                                  child: Text('📷 点击选一张图（可选）',
-                                      style: TextStyle(fontSize: 12.5, color: AppColors.textHint))),
-                ),
-              ),
+            // ---- 多图（横滑缩略图 + 加图块；第一张即主图，支持 AI 去背） ----
+            SizedBox(
+              height: 120,
+              child: _uploading && _previewBytes != null
+                  ? Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const SizedBox(
+                              width: 22, height: 22,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary)),
+                          const SizedBox(height: 8),
+                          Text('正在上传（含 AI 抠图，稍等）…',
+                              style: const TextStyle(fontSize: 11.5, color: AppColors.textHint)),
+                        ],
+                      ),
+                    )
+                  : ListView(
+                      scrollDirection: Axis.horizontal,
+                      children: [
+                        for (var i = 0; i < _imageUrls.length; i++)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 10),
+                            child: Stack(
+                              children: [
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(14),
+                                  child: SizedBox(
+                                    width: 96, height: 120,
+                                    child: Image.network(_imageUrls[i], fit: BoxFit.cover,
+                                        errorBuilder: (_, __, ___) => Container(
+                                            color: AppColors.bg,
+                                            alignment: Alignment.center,
+                                            child: Text(i == 0 ? '主图' : '${i + 1}',
+                                                style: const TextStyle(
+                                                    fontSize: 11.5, color: AppColors.textHint)))),
+                                  ),
+                                ),
+                                if (i == 0)
+                                  Positioned(
+                                    left: 6, bottom: 6,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: Colors.black54,
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: const Text('主图',
+                                          style: TextStyle(fontSize: 9.5, color: Colors.white)),
+                                    ),
+                                  ),
+                                Positioned(
+                                  right: 4, top: 4,
+                                  child: Material(
+                                    color: Colors.black54,
+                                    shape: const CircleBorder(),
+                                    child: InkWell(
+                                      customBorder: const CircleBorder(),
+                                      onTap: () => setState(() => _imageUrls.removeAt(i)),
+                                      child: const Padding(
+                                        padding: EdgeInsets.all(3),
+                                        child: Icon(Icons.close_rounded, size: 13, color: Colors.white),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        if (_imageUrls.length < _maxImages)
+                          GestureDetector(
+                            onTap: _uploading ? null : _pickImage,
+                            child: Container(
+                              width: 96, height: 120,
+                              decoration: BoxDecoration(
+                                color: AppColors.bg,
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(color: AppColors.divider),
+                              ),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  const Icon(Icons.add_a_photo_rounded, size: 22, color: AppColors.primary),
+                                  const SizedBox(height: 6),
+                                  Text('加图 ${_imageUrls.length}/$_maxImages',
+                                      style: const TextStyle(fontSize: 10.5, color: AppColors.textHint)),
+                                ],
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
             ),
             const SizedBox(height: 12),
 
@@ -295,7 +380,7 @@ class _ItemFormSheetState extends State<ItemFormSheet> {
             ),
             const SizedBox(height: 8),
             const Center(
-              child: Text('AI 美化/自动抠图在下一阶段上线；图片会存到云存储，换设备也在',
+              child: Text('多图第一张即主图；配置 AI 抠图后自动去背。图片存到云存储，换设备也在',
                   style: TextStyle(fontSize: 11, color: AppColors.textHint)),
             ),
           ],

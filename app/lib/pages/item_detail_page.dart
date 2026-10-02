@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 
 import '../models/models.dart';
 import '../services/api_client.dart';
+import '../services/tryon_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/item_form_sheet.dart';
+import 'tryon_page.dart';
 
 class ItemDetailPage extends StatefulWidget {
   const ItemDetailPage({super.key, required this.item});
@@ -20,12 +22,24 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
   late ItemInfo _item;
   List<HistoryEntry> _wornWith = [];
   bool _loadingHistory = true;
+  bool _tryonEnabled = false;
+  int _pageIdx = 0; // 画廊当前页
+
+  /// 展示图列表：多图优先，回退主图（编辑保存后 pop 返回会刷新）
+  List<String> get _gallery => _item.gallery;
 
   @override
   void initState() {
     super.initState();
     _item = widget.item;
     _loadHistory();
+    _loadTryonFlag();
+  }
+
+  /// 试衣间开关（用户在设置里启用后，详情页 AppBar 出现「试穿」入口）
+  Future<void> _loadTryonFlag() async {
+    final c = await TryonService.loadConfig();
+    if (mounted) setState(() => _tryonEnabled = c.isReady);
   }
 
   /// 这件单品参与过的搭配记录（最多展示 5 条）
@@ -58,6 +72,22 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
       // 编辑成功：从衣橱最新数据里找这件（表单保存后由衣橱页刷新，这里本地同步字段）
       _snack('已更新，衣橱列表同步刷新');
       Navigator.pop(context, true);
+    }
+  }
+
+  /// 置顶开关（衣橱列表置顶优先；mock 模式本地切换）
+  Future<void> _togglePin() async {
+    final next = !_item.pinned;
+    setState(() => _item = _item.copyWith(pinned: next));
+    try {
+      await ApiClient.togglePin(_item.id, next);
+      if (mounted) _snack(next ? '已置顶，衣橱列表最上方见' : '取消置顶了');
+    } catch (e) {
+      // 回滚
+      if (mounted) {
+        setState(() => _item = _item.copyWith(pinned: !next));
+        _snack('没置顶成功：${e.toString().substring(0, e.toString().length.clamp(0, 60))}');
+      }
     }
   }
 
@@ -109,11 +139,32 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
         title: const Text('单品详情',
             style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textMain)),
         centerTitle: true,
+        actions: [
+          IconButton(
+            onPressed: _togglePin,
+            tooltip: _item.pinned ? '取消置顶' : '置顶',
+            icon: Icon(
+              _item.pinned ? Icons.push_pin_rounded : Icons.push_pin_outlined,
+              size: 20,
+              color: _item.pinned ? AppColors.accent : AppColors.textSub,
+            ),
+          ),
+          if (_tryonEnabled)
+            IconButton(
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => TryonPage(presetGarment: _item)),
+              ),
+              tooltip: '去试穿',
+              icon: const Icon(Icons.checkroom_rounded, color: AppColors.primary),
+            ),
+        ],
       ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
         children: [
-          // ---- 大图卡（有图显示图，无图显示分类 emoji 色块） ----
+          // ---- 大图区：多图横滑（无图回退分类 emoji 色块）+ 换图快捷钮 ----
           Stack(
             children: [
               Container(
@@ -126,22 +177,41 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                     colors: _item.gradient,
                   ),
                 ),
-                child: Center(
-                  child: _item.imageUrl != null && _item.imageUrl!.startsWith('http')
-                      ? ClipRRect(
-                          borderRadius: BorderRadius.circular(AppColors.radius),
-                          child: Image.network(
-                            _item.imageUrl!,
+                child: _gallery.isEmpty
+                    ? Center(
+                        child: Text(_item.emoji,
+                            style: const TextStyle(fontSize: 110, height: 1.1)))
+                    : ClipRRect(
+                        borderRadius: BorderRadius.circular(AppColors.radius),
+                        child: PageView.builder(
+                          itemCount: _gallery.length,
+                          onPageChanged: (i) => setState(() => _pageIdx = i),
+                          itemBuilder: (_, i) => Image.network(
+                            _gallery[i],
                             width: double.infinity,
                             height: 260,
                             fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) =>
-                                Text(_item.emoji, style: const TextStyle(fontSize: 110, height: 1.1)),
+                            errorBuilder: (_, __, ___) => Center(
+                                child: Text(_item.emoji,
+                                    style: const TextStyle(fontSize: 110, height: 1.1))),
                           ),
-                        )
-                      : Text(_item.emoji, style: const TextStyle(fontSize: 110, height: 1.1)),
-                ),
+                        ),
+                      ),
               ),
+              // 页码指示（多图时右下角 1/3）
+              if (_gallery.length > 1)
+                Positioned(
+                  right: 56, bottom: 10,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                    child: Text('${_pageIdx + 1}/${_gallery.length}',
+                        style: const TextStyle(fontSize: 11, color: Colors.white)),
+                  ),
+                ),
               // 右下角「换图」快捷钮（打开编辑表单，图片区在顶部）
               Positioned(
                 right: 10,

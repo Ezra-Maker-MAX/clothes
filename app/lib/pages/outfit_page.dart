@@ -1,11 +1,23 @@
 // 搭配页 —— 参考竞品「搭配」形态：
 // 双列搭配拼图卡（真实历史组合渲染，DIY 有角标）+ 右下悬浮「+」DIY 搭配
+// P0：拼图卡背景色可换（对齐 lookie「DIY 搭配背景编辑」；本地偏好，不落库）
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/models.dart';
 import '../services/api_client.dart';
 import '../services/mock_data.dart';
 import '../theme/app_colors.dart';
+
+/// 可选卡底色（浅色系保证文字可读）：白 / 米杏 / 雾蓝 / 裸粉 / 淡紫 / 薄荷
+const List<Color> _kBgChoices = [
+  Color(0xFFFFFFFF),
+  Color(0xFFFDF6EC),
+  Color(0xFFEAF1F8),
+  Color(0xFFF7E9E6),
+  Color(0xFFEFEAF6),
+  Color(0xFFE6F2EC),
+];
 
 class OutfitPage extends StatefulWidget {
   const OutfitPage({super.key});
@@ -19,13 +31,29 @@ class _OutfitPageState extends State<OutfitPage> {
   String? _errorDetail;
   List<HistoryEntry> _history = [];
   List<ItemInfo> _wardrobe = [];
+  Color _bgColor = _kBgChoices.first; // 拼图卡底色（本地偏好持久化）
 
   bool get _real => !ApiClient.useMock;
 
   @override
   void initState() {
     super.initState();
+    _loadBgPref();
     if (_real) _load();
+  }
+
+  Future<void> _loadBgPref() async {
+    final sp = await SharedPreferences.getInstance();
+    final idx = sp.getInt('diy_bg_color') ?? 0;
+    if (mounted && idx >= 0 && idx < _kBgChoices.length) {
+      setState(() => _bgColor = _kBgChoices[idx]);
+    }
+  }
+
+  Future<void> _pickBg(Color c) async {
+    setState(() => _bgColor = c);
+    final sp = await SharedPreferences.getInstance();
+    await sp.setInt('diy_bg_color', _kBgChoices.indexOf(c));
   }
 
   Future<void> _load() async {
@@ -71,7 +99,9 @@ class _OutfitPageState extends State<OutfitPage> {
           padding: const EdgeInsets.fromLTRB(20, 10, 20, 96),
           children: [
             _header(),
-            const SizedBox(height: 16),
+            const SizedBox(height: 10),
+            _bgPalette(),
+            const SizedBox(height: 8),
             if (_loading)
               const Padding(
                 padding: EdgeInsets.only(top: 60),
@@ -132,6 +162,41 @@ class _OutfitPageState extends State<OutfitPage> {
     );
   }
 
+  /// 背景色板：小圆点一排，当前色描边选中（对齐 lookie 的 DIY 背景编辑）
+  Widget _bgPalette() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        children: [
+          const Text('卡底色',
+              style: TextStyle(fontSize: 11.5, color: AppColors.textHint)),
+          const SizedBox(width: 10),
+          for (final c in _kBgChoices) ...[
+            GestureDetector(
+              onTap: () => _pickBg(c),
+              child: Container(
+                width: 22,
+                height: 22,
+                decoration: BoxDecoration(
+                  color: c,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    width: _bgColor == c ? 2 : 1,
+                    color: _bgColor == c ? AppColors.primary : AppColors.divider,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+          ],
+          const Spacer(),
+          const Text('点一下换背景',
+              style: TextStyle(fontSize: 10.5, color: AppColors.textHint)),
+        ],
+      ),
+    );
+  }
+
   Widget _emptyView() {
     return Container(
       margin: const EdgeInsets.only(top: 40),
@@ -176,6 +241,7 @@ class _OutfitPageState extends State<OutfitPage> {
           occasion: e.occasionLabel,
           date: e.date,
           isDiy: e.source == 'manual',
+          bgColor: _bgColor,
         );
       },
     );
@@ -195,22 +261,23 @@ class _OutfitPageState extends State<OutfitPage> {
       itemCount: MockData.outfitCards.length,
       itemBuilder: (_, i) {
         final (occasion, date, _, emojis) = MockData.outfitCards[i];
-        return _card(emojis: emojis, occasion: occasion, date: date, isDiy: false);
+        return _card(emojis: emojis, occasion: occasion, date: date, isDiy: false, bgColor: _bgColor);
       },
     );
   }
 
-  // ---- 拼图卡：多单品 emoji 组合 + 场合标签 + 日期（+ DIY 角标） ----
+  // ---- 拼图卡：多单品 emoji 组合 + 场合标签 + 日期（+ DIY 角标；底色可选） ----
   Widget _card({
     required List<String> emojis,
     required String occasion,
     required String date,
     required bool isDiy,
+    Color bgColor = AppColors.card,
   }) {
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: AppColors.card,
+        color: bgColor,
         borderRadius: BorderRadius.circular(AppColors.radius),
         boxShadow: AppColors.softShadow,
       ),

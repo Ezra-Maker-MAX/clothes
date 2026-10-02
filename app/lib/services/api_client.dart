@@ -26,6 +26,9 @@ class ApiClient {
     defaultValue: 'http://localhost:3001',
   );
 
+  /// 展示用版本号（设置页「关于」）；与 pubspec.yaml 保持一致
+  static const String appVersion = '0.2.0';
+
   static const String demoUserId = 'u_demo_0001';
 
   /// 超时分档：
@@ -309,6 +312,16 @@ class ApiClient {
       for (final c in cats) {
         if (c.id == catId) cat = c;
       }
+      // 多图：image_urls 为 JSON 数组字符串（服务端存的 TEXT 列）
+      List<String> imgs = const [];
+      final rawUrls = r['image_urls'];
+      if (rawUrls is String && rawUrls.isNotEmpty) {
+        try {
+          imgs = (jsonDecode(rawUrls) as List).map((e) => e.toString()).toList();
+        } catch (_) {}
+      } else if (rawUrls is List) {
+        imgs = rawUrls.map((e) => e.toString()).toList();
+      }
       return ItemInfo(
         id: r['id'] as String? ?? '',
         name: r['name'] as String? ?? '未命名单品',
@@ -316,6 +329,8 @@ class ApiClient {
         categoryLabel: cat.name,
         categoryId: catId,
         imageUrl: r['image_url'] as String?,
+        imageUrls: imgs,
+        pinned: (r['pinned'] as num?)?.toInt() == 1,
         colorName: r['color_name'] as String?,
         lastWornAt: r['last_worn_at'] as String?,
         brand: r['brand'] as String?,
@@ -325,7 +340,7 @@ class ApiClient {
     }).toList();
   }
 
-  /// 手动添加单品（图片可选：已上传的 Blob URL；拍照/抠图属后续阶段）
+  /// 手动添加单品（图片可选：已上传的 Blob URL；多图存 JSON 列表，主图走 imageUrl）
   static Future<void> addWardrobeItem({
     required String name,
     required String categoryId,
@@ -333,6 +348,8 @@ class ApiClient {
     String? brand,
     double? price,
     String? imageUrl,
+    List<String> imageUrls = const [],
+    bool pinned = false,
   }) async {
     if (useMock) return;
     final res = await _http
@@ -344,6 +361,8 @@ class ApiClient {
             'name': name,
             'imageUrl': imageUrl ?? 'https://placehold.co/400x533?text=YiNian',
             'category': categoryId,
+            if (imageUrls.isNotEmpty) 'imageUrls': imageUrls,
+            'pinned': pinned,
             if (colorName != null && colorName.isNotEmpty) 'colorName': colorName,
             if (brand != null && brand.isNotEmpty) 'brand': brand,
             if (price != null) 'price': price,
@@ -363,6 +382,8 @@ class ApiClient {
     String? brand,
     double? price,
     String? imageUrl,
+    List<String>? imageUrls,
+    bool? pinned,
   }) async {
     if (useMock) return;
     final res = await _http
@@ -376,12 +397,18 @@ class ApiClient {
             if (colorName != null) 'colorName': colorName,
             if (brand != null) 'brand': brand,
             if (price != null) 'price': price,
-            if (imageUrl != null && imageUrl.isNotEmpty) 'imageUrl': imageUrl,
+            if (imageUrl != null) 'imageUrl': imageUrl, // 空串 = 清空主图
+            if (imageUrls != null) 'imageUrls': imageUrls, // 空列表 = 清空多图
+            if (pinned != null) 'pinned': pinned,
           }),
         )
         .timeout(_fastTimeout);
     _ensureOk(res);
   }
+
+  /// 置顶 / 取消置顶（详情页快捷开关）
+  static Future<void> togglePin(String id, bool pinned) =>
+      updateWardrobeItem(id: id, pinned: pinned);
 
   /// 删除单品（软删，历史记录不断链）
   static Future<void> deleteWardrobeItem(String id) async {
@@ -392,9 +419,34 @@ class ApiClient {
     _ensureOk(res);
   }
 
-  /// 上传单品图片（/api/upload，base64 JSON 协议）→ Blob URL
+  /// 订单文本导入（P2 降级方案：淘宝订单商品行粘贴 → 批量建单品）
+  /// 返回导入件数；[unknownCategories] 为猜测失败（默认上衣）的名称，提示用户补分类
+  static Future<({int imported, List<String> unknownCategories})> importOrderText(
+      String text) async {
+    if (useMock) throw Exception('演示模式不支持导入，连上正式服务再用');
+    final res = await _http
+        .post(
+          Uri.parse('$baseUrl/api/import-order'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({'userId': demoUserId, 'text': text}),
+        )
+        .timeout(_genTimeout); // 批量插入可能稍慢
+    _ensureOk(res);
+    final body = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+    final data = (body['data'] as Map<String, dynamic>?) ?? const {};
+    final items = (data['items'] as List?) ?? const [];
+    final unknown = items
+        .whereType<Map>()
+        .where((m) => m['guessed'] == true)
+        .map((m) => (m['name'] ?? '').toString())
+        .toList();
+    return (imported: (data['imported'] as num?)?.toInt() ?? 0, unknownCategories: unknown);
+  }
+
+  /// 上传单品图片（/api/upload，base64 JSON 协议）
+  /// 返回 (url, cutoutUrl)：cutoutUrl 为服务端 AI 抠图结果（未配置/失败为 null）
   /// 服务端未开通 Blob 存储时抛 501 异常（文案已含开通指引）
-  static Future<String> uploadImage({
+  static Future<({String url, String? cutoutUrl})> uploadImage({
     required List<int> bytes,
     required String filename,
     String contentType = 'image/jpeg',
@@ -413,7 +465,11 @@ class ApiClient {
         .timeout(_genTimeout); // 图片较大时上传慢，给足时间
     _ensureOk(res);
     final body = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
-    return ((body['data'] as Map<String, dynamic>)['url'] as String?) ?? '';
+    final data = (body['data'] as Map<String, dynamic>?) ?? const {};
+    return (
+      url: (data['url'] as String?) ?? '',
+      cutoutUrl: data['cutoutUrl'] as String?,
+    );
   }
 
   // ---------------------------------------------------------------

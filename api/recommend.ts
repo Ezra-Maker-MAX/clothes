@@ -33,7 +33,7 @@ const MOCK_RECOMMEND = {
     shoe: { id: 'w_demo_shoe_02', name: '裸色平底穆勒鞋', image_url: 'https://placehold.co/400x533?text=Shoes', color_name: '裸色', pattern: 'plain' },
   },
   makeup: MAKEUP.commute,
-  reason: '燕麦针织 + 白色阔腿裤 + 裸色穆勒鞋，避开昨天穿过的款式，温柔又有通勤精致度。',
+  reason: '静奢通勤风 · 燕麦针织的软糯刚好压住秋风，白色阔腿裤把利落感拉满，避开了昨天穿过的款式。',
   fromCache: false,
 };
 

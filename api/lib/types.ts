@@ -23,6 +23,9 @@ export interface WardrobeItem {
   wear_count: number;
   last_worn_at?: string | null;
   is_favorite?: number;
+  price?: number | null;
+  image_urls?: string | null;  // JSON 数组字符串：多图列表（主图仍为 image_url）
+  pinned?: number;             // 1 = 置顶（列表排序优先）
   status: 'active' | 'archived';
 }
 
