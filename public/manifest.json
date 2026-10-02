@@ -1,11 +1,11 @@
 {
-    "name": "dapei_app",
-    "short_name": "dapei_app",
+    "name": "衣念",
+    "short_name": "衣念",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "衣念 —— 懂她、宠她、有分寸的智能穿搭推荐",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

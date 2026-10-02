@@ -29,7 +29,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
   }
 
-
   // ---- mock 模式：环境变量未配置 ----
   if (!db) {
     return ok(res, {
@@ -38,7 +37,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           + '请执行 turso db create 拿到 URL，再在 Vercel 或本地 .env 中配置。',
       env_needed: ['TURSO_URL', 'TURSO_AUTH_TOKEN'],
       sample: {
-        app: '搭配测试',
+        app: '衣念',
         tables: { users: 1, wardrobe_items: 3, outfit_history: 1, daily_recommendations: 0 },
         demo_recommendation: {
           occasion: '日常通勤',

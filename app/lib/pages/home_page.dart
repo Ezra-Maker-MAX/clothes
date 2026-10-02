@@ -25,6 +25,7 @@ class _HomePageState extends State<HomePage> {
   bool _swapping = false;
   bool _loading = false;
   String? _error;
+  String? _errorDetail; // 真实异常信息（小字展示，便于远程诊断网络问题）
 
   @override
   void initState() {
@@ -50,10 +51,16 @@ class _HomePageState extends State<HomePage> {
           _outfit = results[0] as OutfitRecommendation;
           _stats = results[1] as HomeStats;
           _error = null;
+          _errorDetail = null;
         });
       }
-    } catch (_) {
-      if (mounted) setState(() => _error = '今天挑衣的服务打了个小盹，点一下再试');
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = '今天挑衣的服务打了个小盹，点一下再试';
+          _errorDetail = e.toString();
+        });
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -139,6 +146,17 @@ class _HomePageState extends State<HomePage> {
                   style: const TextStyle(color: AppColors.textMain, fontSize: 14),
                   textAlign: TextAlign.center),
             ),
+            if (_errorDetail != null) ...[
+              const SizedBox(height: 10),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 32),
+                child: Text(_errorDetail!,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: AppColors.textSub, fontSize: 11),
+                    textAlign: TextAlign.center),
+              ),
+            ],
             const SizedBox(height: 18),
             FilledButton(
               onPressed: _load,

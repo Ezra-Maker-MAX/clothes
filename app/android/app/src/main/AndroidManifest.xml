@@ -1,6 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 联网权限：release 包必需（debug/profile 清单不参与 release 构建） -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
     <application
-        android:label="dapei_app"
+        android:label="衣念"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

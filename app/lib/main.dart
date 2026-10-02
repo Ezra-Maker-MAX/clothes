@@ -25,7 +25,7 @@ class DapeiApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: '搭配测试',
+      title: '衣念',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
