@@ -6,12 +6,12 @@
 name: Build Android APK
 
 on:
-  workflow_dispatch:      # 手动触发：仓库页 Actions → Build Android APK → Run
+  workflow_dispatch:
   push:
     tags: ["v*"]
 
 permissions:
-  contents: write         # 允许创建 Release 并上传附件
+  contents: write
 
 jobs:
   build:
@@ -40,17 +40,17 @@ jobs:
         run: flutter build apk --release --dart-define=USE_MOCK=false --dart-define=API_BASE_URL=https://clothes-sand-theta.vercel.app
 
       - name: 重命名 APK（带版本号）
-        run: cp app/build/app/outputs/flutter-apk/app-release.apk dapei-${GITHUB_REF_NAME}.apk
+        run: cp app/build/app/outputs/flutter-apk/app-release.apk yinian-${{ github.ref_name }}.apk
 
       - name: 上传 Artifacts（30 天保留）
         uses: actions/upload-artifact@v4
         with:
-          name: dapei-apk
-          path: dapei-${GITHUB_REF_NAME}.apk
+          name: yinian-apk
+          path: yinian-${{ github.ref_name }}.apk
           retention-days: 30
 
       - name: 发布到 GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
-          files: dapei-${GITHUB_REF_NAME}.apk
-          body: 搭配测试 ${{ github.ref_name }} 安装包（已连接线上服务）
+          files: yinian-${{ github.ref_name }}.apk
+          body: 衣念 ${{ github.ref_name }} 安装包（已连接线上服务）
