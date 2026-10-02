@@ -37,6 +37,7 @@ class ItemInfo {
     required this.categoryLabel,
     this.imageUrl,
     this.colorName,
+    this.lastWornAt,
   });
 
   final String id;            // 单品唯一 ID（衣橱落库后由后端返回，acceptOutfit 据此写历史）
@@ -45,6 +46,7 @@ class ItemInfo {
   final String emoji;         // 第二阶段占位渲染；有 imageUrl 时优先网络图
   final String? imageUrl;     // Vercel Blob URL（第三阶段衣橱上传后回填）
   final String? colorName;
+  final String? lastWornAt;   // 最近一次上身穿的日期（null = 还没上过身，衣橱页统计用）
 
   /// 图卡底色：按分类给莫兰迪渐变
   List<Color> get gradient {
@@ -113,10 +115,12 @@ class HistoryEntry {
     required this.occasionLabel,
     required this.summary,
     required this.emoji,
+    this.rawDate = '',
     this.rating = 5,
   });
 
   final String date;          // 10月1日
+  final String rawDate;       // 原始 'YYYY-MM-DD'（穿搭日记日历按月点亮，防跨月错亮）
   final String occasionLabel; // 日常通勤
   final String summary;       // 一句话回溯
   final String emoji;

@@ -45,10 +45,12 @@ class _HistoryPageState extends State<HistoryPage> {
 
   int get _daysInMonth => _month == 10 ? 31 : 30;
 
-  /// 已穿日映射：日 → emoji（从真实历史提取日期点亮）
+  /// 已穿日映射：日 → emoji（只点亮当前展示月份，防跨月记录错亮到 10 月网格）
   Map<int, String> get _wornDays {
+    final prefix = '2026-${_month.toString().padLeft(2, '0')}';
     final m = <int, String>{};
     for (final e in _history) {
+      if (!e.rawDate.startsWith(prefix)) continue;
       final day = int.tryParse(RegExp(r'(\d+)日').firstMatch(e.date)?.group(1) ?? '');
       if (day != null) m[day] = e.emoji;
     }

@@ -70,7 +70,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           id: r.id,
           worn_date: r.worn_date,
           occasion: r.occasion,
-          rating: r.rating ?? 0,
+          rating: r.rating ?? 5,
           itemIds: ids,
           itemNames: ids.map((id) => nameMap[id] ?? '单品'),
         };
