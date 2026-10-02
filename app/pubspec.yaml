@@ -12,6 +12,7 @@ dependencies:
   cupertino_icons: ^1.0.8
   http: ^1.2.0            # 第三阶段联调 Vercel API
   image_picker: ^1.1.2    # 选图 + 原生压缩（Android 真正生效，规避 413）
+  image: ^4.3.0           # 纯 Dart 兜底压缩：PNG/HEIC/超大图强制压到安全线（Web 端关键）
   shared_preferences: ^2.5.5
   share_plus: ^13.3.1
 

@@ -70,25 +70,30 @@ class _ItemFormSheetState extends State<ItemFormSheet> {
     super.dispose();
   }
 
-  /// 选图 → 压缩（原生，规避 413）→ 上传 Blob → 加入多图列表
+  /// 选图 → 压缩（强制压到 3MB 安全线，规避 413）→ 上传 Blob → 加入多图列表
   /// 服务端若配置了 AI 抠图，cutoutUrl（去背 PNG）优先作为主图
   Future<void> _pickImage() async {
     if (_imageUrls.length >= _maxImages) {
       _snack('最多 $_maxImages 张图，删一张再加');
       return;
     }
+    // 先亮 loading：大图（PNG/高像素照片）压缩要 1~3 秒，别让用户干等
+    setState(() => _uploading = true);
     PickedImage? picked;
     try {
       picked = await pickImage(label: '图片');
     } catch (e) {
-      if (mounted) _snack(e.toString().replaceFirst(RegExp(r'^Bad state:\s*'), ''));
+      if (mounted) {
+        setState(() => _uploading = false);
+        _snack(e.toString().replaceFirst(RegExp(r'^Bad state:\s*'), ''));
+      }
       return;
     }
-    if (picked == null) return; // 用户取消
-    setState(() {
-      _previewBytes = picked!.bytes;
-      _uploading = true;
-    });
+    if (picked == null) {
+      if (mounted) setState(() => _uploading = false);
+      return; // 用户取消
+    }
+    setState(() => _previewBytes = picked!.bytes);
     try {
       final r = await ApiClient.uploadImage(
         bytes: picked.bytes,
