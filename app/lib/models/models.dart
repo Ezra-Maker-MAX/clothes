@@ -28,6 +28,33 @@ class WeatherInfo {
       );
 }
 
+/// 动态分类（对应 /api/categories；内置行 id = 引擎 key）
+class CategoryInfo {
+  const CategoryInfo({
+    required this.id,
+    required this.name,
+    required this.engineKey,
+    required this.sortOrder,
+    this.isBuiltin = false,
+  });
+
+  final String id;
+  final String name;
+  final String engineKey;   // 映射到推荐引擎的适配类别
+  final int sortOrder;
+  final bool isBuiltin;     // 内置分类不可删除
+
+  /// 引擎适配类别 → 默认 emoji（无图单品卡片用）
+  String get emoji => switch (engineKey) {
+        'tops' => '👚',
+        'bottoms' => '👖',
+        'dresses' => '👗',
+        'outerwear' => '🧥',
+        'shoes' => '👡',
+        _ => '👜',
+      };
+}
+
 /// 单品展示模型（对应 wardrobe_items 行 + 前端展示字段）
 class ItemInfo {
   const ItemInfo({
@@ -35,18 +62,34 @@ class ItemInfo {
     required this.name,
     required this.emoji,
     required this.categoryLabel,
+    this.categoryId = '',
     this.imageUrl,
     this.colorName,
     this.lastWornAt,
+    this.brand,
+    this.wearCount = 0,
+    this.price,
   });
 
   final String id;            // 单品唯一 ID（衣橱落库后由后端返回，acceptOutfit 据此写历史）
   final String name;
-  final String categoryLabel; // 上衣 / 裤装 / 鞋子
-  final String emoji;         // 第二阶段占位渲染；有 imageUrl 时优先网络图
+  final String categoryLabel; // 上衣 / 裤装 / 鞋子（动态分类翻译后的展示名）
+  final String categoryId;    // 分类 id（编辑回显/表单提交用；空 = mock 数据）
+  final String emoji;         // 分类默认 emoji；有 imageUrl 时卡片优先网络图
   final String? imageUrl;     // Vercel Blob URL（第三阶段衣橱上传后回填）
   final String? colorName;
   final String? lastWornAt;   // 最近一次上身穿的日期（null = 还没上过身，衣橱页统计用）
+  final String? brand;        // 品牌（手动录入可选填）
+  final int wearCount;        // 累计穿着次数（列表/详情展示）
+  final double? price;        // 购入价格（元）；单次穿着成本 = price / max(wearCount, 1)
+
+  /// 单次穿着成本文案：未填价格或没穿过 → '—'
+  String get costPerWear {
+    if (price == null || price! <= 0) return '—';
+    if (wearCount <= 0) return '—';
+    final v = price! / wearCount;
+    return '¥${v.toStringAsFixed(v < 100 ? 1 : 0)}';
+  }
 
   /// 图卡底色：按分类给莫兰迪渐变
   List<Color> get gradient {
@@ -116,6 +159,8 @@ class HistoryEntry {
     required this.summary,
     required this.emoji,
     this.rawDate = '',
+    this.itemIds = const [],
+    this.source = 'recommended',
     this.rating = 5,
   });
 
@@ -124,5 +169,7 @@ class HistoryEntry {
   final String occasionLabel; // 日常通勤
   final String summary;       // 一句话回溯
   final String emoji;
+  final List<String> itemIds; // 这一套的单品 id（搭配页拼图卡渲染用）
+  final String source;        // recommended = AI 推荐 / manual = DIY 自配
   final int rating;
 }

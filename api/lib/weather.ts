@@ -42,7 +42,10 @@ export async function getWeather(opts: { location?: string; city?: string } = {}
     const url = `https://devapi.qweather.com/v7/weather/now?location=${encodeURIComponent(
       location,
     )}&key=${key}`;
-    const r = await fetch(url);
+    // ⚠️ 必须带超时：recommend 每个请求（含缓存命中路径）都先 await getWeather，
+    // 和风 API 挂起时会拖满 Vercel maxDuration 被强杀 → 客户端 30s 超时。
+    // 4s 拿不到就降级 mock，绝不拖累主链路。
+    const r = await fetch(url, { signal: AbortSignal.timeout(4000) });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const j = (await r.json()) as { code?: string; now?: { temp?: string; feelsLike?: string; text?: string } };
     if (j.code !== '200' || !j.now) throw new Error(`code ${j.code}`);

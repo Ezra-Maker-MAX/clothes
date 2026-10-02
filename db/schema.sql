@@ -58,6 +58,7 @@ CREATE TABLE IF NOT EXISTS wardrobe_items (
   formality     INTEGER NOT NULL DEFAULT 2 CHECK (formality BETWEEN 1 AND 5),
                 -- 正式度 1~5：1=居家 2=日常 3=通勤 4=约会 5=面试/正装
   brand         TEXT,
+  price         NUMERIC,                         -- 购入价格（元），惰性迁移列（ensureSchema 自动 ADD）
   source        TEXT NOT NULL DEFAULT 'upload',  -- 来源: upload/ai_generated
   tags          TEXT,                            -- 自由标签 JSON
   wear_count    INTEGER NOT NULL DEFAULT 0,      -- 累计穿着次数 → 首页"未穿单品"统计
@@ -72,6 +73,18 @@ CREATE TABLE IF NOT EXISTS wardrobe_items (
 CREATE INDEX IF NOT EXISTS idx_items_user_category ON wardrobe_items(user_id, category);
 -- 排重/未穿单品：按最后穿着时间排序
 CREATE INDEX IF NOT EXISTS idx_items_last_worn ON wardrobe_items(user_id, last_worn_at);
+
+-- 动态分类（衣橱 tab 展示层；item.category 存分类 id，经 engine_key 映射推荐引擎）
+-- ⚠️ 线上库由 api/lib/db.ts ensureSchema() 惰性创建（幂等），此定义用于新库初始化与文档
+CREATE TABLE IF NOT EXISTS categories (
+  id          TEXT PRIMARY KEY,                -- 内置行 id = 引擎 key（tops/bottoms/...）
+  user_id     TEXT NOT NULL,
+  name        TEXT NOT NULL,
+  engine_key  TEXT NOT NULL,                   -- 映射到推荐引擎的适配类别
+  sort_order  INTEGER NOT NULL DEFAULT 0,
+  is_builtin  INTEGER NOT NULL DEFAULT 0,      -- 内置分类不可删除
+  created_at  TEXT DEFAULT (datetime('now'))
+);
 
 -- ------------------------------------------------------------
 -- 3. outfit_history 穿搭历史（"本月搭配"统计 + 排重数据源）

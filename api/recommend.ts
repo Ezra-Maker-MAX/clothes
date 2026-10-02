@@ -88,7 +88,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       sql: `SELECT * FROM wardrobe_items WHERE user_id=? AND status='active'`,
       args: [userId],
     });
-    const wardrobe = items.rows as unknown as WardrobeItem[];
+
+    // 分类翻译层：item.category 存的是分类 id（内置行 id=引擎 key），
+    // 动态分类经 categories.engine_key 映射回引擎适配类别 —— 引擎只认 key，永不失明
+    const catRows = await db.execute({
+      sql: `SELECT id, engine_key FROM categories WHERE user_id=?`,
+      args: [userId],
+    });
+    const engineMap: Record<string, string> = {};
+    for (const r of catRows.rows as Array<Record<string, unknown>>) {
+      engineMap[String(r.id)] = String(r.engine_key);
+    }
+    const wardrobe = (items.rows as unknown as Array<Record<string, unknown>>).map((r) => ({
+      ...r,
+      category: engineMap[String(r.category)] ?? String(r.category),
+    })) as unknown as WardrobeItem[];
 
     // 排重：最近 2 天穿过的单品一律避开
     // （显式断言行类型：不依赖 @libsql/core 转发类型链，Vercel 构建更稳）

@@ -71,6 +71,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           worn_date: r.worn_date,
           occasion: r.occasion,
           rating: r.rating ?? 5,
+          source: r.source ?? 'recommended',
           itemIds: ids,
           itemNames: ids.map((id) => nameMap[id] ?? '单品'),
         };
@@ -101,7 +102,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           args: [
             uuid(), b.userId, wornDate, JSON.stringify(b.itemIds), b.occasion,
             b.weatherSnapshot ? JSON.stringify(b.weatherSnapshot) : null,
-            b.rating ?? null, b.feedback ?? null, 'recommended',
+            b.rating ?? null, b.feedback ?? null, b.source === 'manual' ? 'manual' : 'recommended',
           ],
         },
         ...b.itemIds.map((id: string) => ({

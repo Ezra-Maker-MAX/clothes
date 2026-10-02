@@ -50,3 +50,36 @@ export function uuid(): string {
 export function todayCn(): string {
   return new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10);
 }
+
+// ---------------------------------------------------------------------------
+// 惰性 schema 迁移：线上 Turso 库已建基础表，这里只做「增量」且全部幂等——
+// CREATE TABLE IF NOT EXISTS 重复执行无副作用；ALTER ADD COLUMN 重复会报
+// duplicate column，捕获忽略即可。每个 serverless 实例只跑一次（schemaReady）。
+// 新增表/列时同步更新 db/schema.sql 保持文档一致。
+// ---------------------------------------------------------------------------
+let schemaReady = false;
+
+export async function ensureSchema(): Promise<void> {
+  const db = getDb();
+  if (!db || schemaReady) return;
+  try {
+    await db.execute(`CREATE TABLE IF NOT EXISTS categories (
+      id         TEXT PRIMARY KEY,
+      user_id    TEXT NOT NULL,
+      name       TEXT NOT NULL,
+      engine_key TEXT NOT NULL,              -- 映射到推荐引擎的适配类别（tops/bottoms/...）
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      is_builtin INTEGER NOT NULL DEFAULT 0, -- 内置分类不可删除
+      created_at TEXT DEFAULT (datetime('now'))
+    )`);
+    try {
+      await db.execute(`ALTER TABLE wardrobe_items ADD COLUMN price NUMERIC`);
+    } catch {
+      // duplicate column name → 已迁移过，忽略
+    }
+    schemaReady = true;
+  } catch (e) {
+    // 迁移失败不阻断请求：调用方各自降级（分类用内置、价格不展示）
+    console.warn('[db] ensureSchema 失败（不阻断）：', e instanceof Error ? e.message : e);
+  }
+}

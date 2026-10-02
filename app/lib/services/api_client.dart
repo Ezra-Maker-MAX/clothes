@@ -108,11 +108,31 @@ class ApiClient {
     _ensureOk(res);
   }
 
+  /// 「DIY 搭配」：自选单品存为一套（source=manual，不推进推荐排重统计以外字段）
+  static Future<void> saveManualOutfit(List<ItemInfo> items) async {
+    if (useMock) return;
+    final res = await _http
+        .post(
+          Uri.parse('$baseUrl/api/history'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'userId': demoUserId,
+            'itemIds': items.map((i) => i.id).toList(),
+            'occasion': 'casual',
+            'source': 'manual',
+          }),
+        )
+        .timeout(_fastTimeout);
+    _ensureOk(res);
+  }
+
   /// 历史穿搭：GET /api/history → 真实搭配日记（含单品名）
-  static Future<List<HistoryEntry>> getHistory() async {
+  /// month: 'YYYY-MM' 只拉该月（穿搭日记按月翻页用；服务端已支持 month 过滤）
+  static Future<List<HistoryEntry>> getHistory({String? month}) async {
     if (useMock) return MockData.history;
     final res = await _http
-        .get(Uri.parse('$baseUrl/api/history?userId=$demoUserId'))
+        .get(Uri.parse(
+            '$baseUrl/api/history?userId=$demoUserId${month != null ? '&month=$month' : ''}'))
         .timeout(_fastTimeout);
     final data = _data(res);
     final items = (data['items'] as List?) ?? [];
@@ -137,6 +157,8 @@ class ApiClient {
           'party' => '🥂',
           _ => '🌿',
         },
+        itemIds: ((r['itemIds'] as List?) ?? []).map((e) => e as String).toList(),
+        source: r['source'] as String? ?? 'recommended',
         rating: rating,
       );
     }).toList();
@@ -170,39 +192,111 @@ class ApiClient {
   }
 
   // ---------------------------------------------------------------
-  // 衣橱：GET / POST /api/wardrobe
+  // 分类（动态）：GET/POST/PATCH/DELETE /api/categories
   // ---------------------------------------------------------------
-  /// 服务端分类 key（types.ts）↔ 客户端中文标签
-  static String _categoryKey(String label) => switch (label) {
-        '上衣' => 'tops',
-        '裤装' => 'bottoms',
-        '裙装' => 'dresses',
-        '外套' => 'outerwear',
-        '鞋子' => 'shoes',
-        _ => 'accessories', // 配饰（服务端 bags 归并展示）
-      };
+  /// 内置兜底（分类接口失败/离线时仍可用，id=引擎 key 与内置行一致）
+  static const List<CategoryInfo> builtinCategories = [
+    CategoryInfo(id: 'tops', name: '上衣', engineKey: 'tops', sortOrder: 1, isBuiltin: true),
+    CategoryInfo(id: 'bottoms', name: '裤装', engineKey: 'bottoms', sortOrder: 2, isBuiltin: true),
+    CategoryInfo(id: 'dresses', name: '裙装', engineKey: 'dresses', sortOrder: 3, isBuiltin: true),
+    CategoryInfo(id: 'outerwear', name: '外套', engineKey: 'outerwear', sortOrder: 4, isBuiltin: true),
+    CategoryInfo(id: 'shoes', name: '鞋子', engineKey: 'shoes', sortOrder: 5, isBuiltin: true),
+    CategoryInfo(id: 'bags', name: '包包', engineKey: 'bags', sortOrder: 6, isBuiltin: true),
+    CategoryInfo(id: 'accessories', name: '配饰', engineKey: 'accessories', sortOrder: 7, isBuiltin: true),
+  ];
 
-  static String _categoryLabel(String key) => switch (key) {
-        'tops' => '上衣',
-        'bottoms' => '裤装',
-        'dresses' => '裙装',
-        'outerwear' => '外套',
-        'shoes' => '鞋子',
-        _ => '配饰', // bags / accessories
-      };
+  static Future<List<CategoryInfo>> getCategories() async {
+    if (useMock) return builtinCategories;
+    try {
+      final res = await _http
+          .get(Uri.parse('$baseUrl/api/categories?userId=$demoUserId'))
+          .timeout(_fastTimeout);
+      final data = _data(res);
+      final items = (data['items'] as List?) ?? [];
+      if (items.isEmpty) return builtinCategories;
+      return items.map<CategoryInfo>((raw) {
+        final r = raw as Map<String, dynamic>;
+        return CategoryInfo(
+          id: r['id'] as String? ?? '',
+          name: r['name'] as String? ?? '',
+          engineKey: r['engineKey'] as String? ?? 'tops',
+          sortOrder: (r['sortOrder'] as num?)?.toInt() ?? 0,
+          isBuiltin: r['isBuiltin'] as bool? ?? false,
+        );
+      }).toList();
+    } catch (_) {
+      return builtinCategories; // 拉不到就用内置，衣橱永不白屏
+    }
+  }
 
-  static String _categoryEmoji(String label) => switch (label) {
-        '上衣' => '👚',
-        '裤装' => '👖',
-        '裙装' => '👗',
-        '外套' => '🧥',
-        '鞋子' => '👡',
-        _ => '👜',
-      };
+  static Future<void> createCategory({
+    required String name,
+    required String engineKey,
+  }) async {
+    if (useMock) return;
+    final res = await _http
+        .post(Uri.parse('$baseUrl/api/categories'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'userId': demoUserId, 'name': name, 'engineKey': engineKey}))
+        .timeout(_fastTimeout);
+    _ensureOk(res);
+  }
 
+  static Future<void> renameCategory({required String id, required String name}) async {
+    if (useMock) return;
+    final res = await _http
+        .patch(Uri.parse('$baseUrl/api/categories'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'id': id, 'name': name}))
+        .timeout(_fastTimeout);
+    _ensureOk(res);
+  }
+
+  static Future<void> reorderCategories(List<String> orderedIds) async {
+    if (useMock) return;
+    final res = await _http
+        .patch(Uri.parse('$baseUrl/api/categories'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'userId': demoUserId, 'order': orderedIds}))
+        .timeout(_fastTimeout);
+    _ensureOk(res);
+  }
+
+  static Future<void> deleteCategory(String id) async {
+    if (useMock) return;
+    final res = await _http
+        .delete(Uri.parse('$baseUrl/api/categories?id=$id&userId=$demoUserId'))
+        .timeout(_fastTimeout);
+    _ensureOk(res);
+  }
+
+  /// 分类 id → 中文名（内置兜底翻译；动态分类传入列表优先）
+  static String categoryLabelOf(String categoryId, {List<CategoryInfo>? categories}) {
+    final list = categories ?? builtinCategories;
+    for (final c in list) {
+      if (c.id == categoryId) return c.name;
+    }
+    return builtinCategories.firstWhere((c) => c.id == categoryId,
+            orElse: () => const CategoryInfo(id: '?', name: '配饰', engineKey: 'accessories', sortOrder: 99))
+        .name;
+  }
+
+  static String categoryEmojiOf(String categoryId, {List<CategoryInfo>? categories}) {
+    final list = categories ?? builtinCategories;
+    for (final c in list) {
+      if (c.id == categoryId) return c.emoji;
+    }
+    return '👜';
+  }
+
+  // ---------------------------------------------------------------
+  // 衣橱：GET / POST / PATCH / DELETE /api/wardrobe
+  // ---------------------------------------------------------------
   /// 衣橱真实单品列表（lastWornAt 为 null 即「还没上过身」）
-  static Future<List<ItemInfo>> getWardrobe() async {
+  /// categories 不传则自动拉取一次用于翻译动态分类
+  static Future<List<ItemInfo>> getWardrobe({List<CategoryInfo>? categories}) async {
     if (useMock) return MockData.wardrobe;
+    final cats = categories ?? await getCategories();
     final res = await _http
         .get(Uri.parse('$baseUrl/api/wardrobe?userId=$demoUserId'))
         .timeout(_fastTimeout);
@@ -210,24 +304,35 @@ class ApiClient {
     final items = (data['items'] as List?) ?? [];
     return items.map<ItemInfo>((raw) {
       final r = raw as Map<String, dynamic>;
-      final label = _categoryLabel(r['category'] as String? ?? '');
+      final catId = r['category'] as String? ?? '';
+      CategoryInfo cat = builtinCategories.first;
+      for (final c in cats) {
+        if (c.id == catId) cat = c;
+      }
       return ItemInfo(
         id: r['id'] as String? ?? '',
         name: r['name'] as String? ?? '未命名单品',
-        emoji: _categoryEmoji(label),
-        categoryLabel: label,
+        emoji: cat.emoji,
+        categoryLabel: cat.name,
+        categoryId: catId,
         imageUrl: r['image_url'] as String?,
         colorName: r['color_name'] as String?,
         lastWornAt: r['last_worn_at'] as String?,
+        brand: r['brand'] as String?,
+        wearCount: (r['wear_count'] as num?)?.toInt() ?? 0,
+        price: (r['price'] as num?)?.toDouble(),
       );
     }).toList();
   }
 
-  /// 手动添加单品（拍照/抠图上传属后续阶段，图片先落占位图满足服务端必填）
+  /// 手动添加单品（图片可选：已上传的 Blob URL；拍照/抠图属后续阶段）
   static Future<void> addWardrobeItem({
     required String name,
-    required String categoryLabel,
+    required String categoryId,
     String? colorName,
+    String? brand,
+    double? price,
+    String? imageUrl,
   }) async {
     if (useMock) return;
     final res = await _http
@@ -237,14 +342,78 @@ class ApiClient {
           body: jsonEncode({
             'userId': demoUserId,
             'name': name,
-            'imageUrl': 'https://placehold.co/400x533?text=YiNian',
-            'category': _categoryKey(categoryLabel),
+            'imageUrl': imageUrl ?? 'https://placehold.co/400x533?text=YiNian',
+            'category': categoryId,
             if (colorName != null && colorName.isNotEmpty) 'colorName': colorName,
+            if (brand != null && brand.isNotEmpty) 'brand': brand,
+            if (price != null) 'price': price,
             'source': 'manual',
           }),
         )
         .timeout(_fastTimeout);
     _ensureOk(res);
+  }
+
+  /// 编辑单品基础字段（PATCH /api/wardrobe）
+  static Future<void> updateWardrobeItem({
+    required String id,
+    String? name,
+    String? categoryId,
+    String? colorName,
+    String? brand,
+    double? price,
+    String? imageUrl,
+  }) async {
+    if (useMock) return;
+    final res = await _http
+        .patch(
+          Uri.parse('$baseUrl/api/wardrobe'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'id': id,
+            if (name != null && name.isNotEmpty) 'name': name,
+            if (categoryId != null && categoryId.isNotEmpty) 'category': categoryId,
+            if (colorName != null) 'colorName': colorName,
+            if (brand != null) 'brand': brand,
+            if (price != null) 'price': price,
+            if (imageUrl != null && imageUrl.isNotEmpty) 'imageUrl': imageUrl,
+          }),
+        )
+        .timeout(_fastTimeout);
+    _ensureOk(res);
+  }
+
+  /// 删除单品（软删，历史记录不断链）
+  static Future<void> deleteWardrobeItem(String id) async {
+    if (useMock) return;
+    final res = await _http
+        .delete(Uri.parse('$baseUrl/api/wardrobe?id=$id'))
+        .timeout(_fastTimeout);
+    _ensureOk(res);
+  }
+
+  /// 上传单品图片（/api/upload，base64 JSON 协议）→ Blob URL
+  /// 服务端未开通 Blob 存储时抛 501 异常（文案已含开通指引）
+  static Future<String> uploadImage({
+    required List<int> bytes,
+    required String filename,
+    String contentType = 'image/jpeg',
+  }) async {
+    if (useMock) throw Exception('演示模式：无需上传图片');
+    final res = await _http
+        .post(
+          Uri.parse('$baseUrl/api/upload?userId=$demoUserId'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'filename': filename,
+            'contentType': contentType,
+            'dataBase64': base64Encode(bytes),
+          }),
+        )
+        .timeout(_genTimeout); // 图片较大时上传慢，给足时间
+    _ensureOk(res);
+    final body = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+    return ((body['data'] as Map<String, dynamic>)['url'] as String?) ?? '';
   }
 
   // ---------------------------------------------------------------

@@ -4,10 +4,11 @@
  * GET    ?userId=xxx&category=tops   拉取列表（可按分类过滤，软删自动排除）
  * POST   body: { userId, name, imageUrl, category, colorName?, colorHex?,
  *                warmthLevel?, formality?, pattern?, subCategory?, brand? }
+ * PATCH  body: { id, name?, category?, colorName?, brand? }   编辑基础字段
  * DELETE ?id=xxx                     软删（status → archived，历史记录不因此断链）
  */
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getDb, uuid } from './lib/db';
+import { getDb, uuid, ensureSchema } from './lib/db';
 import { cors, ok, fail } from './lib/http';
 import type { WardrobeItem } from './lib/types';
 
@@ -36,6 +37,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!db) return ok(res, { mode: 'mock', items: MOCK_ITEMS });
 
     try {
+      await ensureSchema(); // price 列惰性迁移（已存在则忽略）
       const r = await db.execute({
         sql: `SELECT * FROM wardrobe_items
               WHERE user_id = ? AND status = 'active'
@@ -58,23 +60,53 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!db) return ok(res, { mode: 'mock', id: 'mock_' + Date.now(), message: 'mock 模式：未落库' });
 
     try {
+      await ensureSchema();
       const id = uuid();
       await db.execute({
         sql: `INSERT INTO wardrobe_items
               (id, user_id, name, image_url, thumbnail_url, category, sub_category,
-               color_name, color_hex, color_family, pattern, warmth_level, formality, brand, source)
-              VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+               color_name, color_hex, color_family, pattern, warmth_level, formality, brand, price, source)
+              VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         args: [
           id, b.userId, b.name, b.imageUrl, b.thumbnailUrl ?? null, b.category,
           b.subCategory ?? null, b.colorName ?? null, b.colorHex ?? null,
           b.colorFamily ?? null, b.pattern ?? null,
           Number(b.warmthLevel ?? 2), Number(b.formality ?? 2),
-          b.brand ?? null, b.source ?? 'upload',
+          b.brand ?? null, b.price != null && b.price !== '' ? Number(b.price) : null,
+          b.source ?? 'upload',
         ],
       });
       return ok(res, { id });
     } catch (e) {
       return fail(res, 500, '写入衣橱失败', e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  // ---------- PATCH（编辑基础字段） ----------
+  if (req.method === 'PATCH') {
+    const b = req.body ?? {};
+    if (!b.id) return fail(res, 400, '缺少 id');
+    if (!db) return ok(res, { mode: 'mock', message: 'mock 模式：未落库' });
+
+    // 只更新传入的字段（name/category/colorName/brand/price/imageUrl）
+    const sets: string[] = [];
+    const args: (string | number | null)[] = [];
+    if (b.name) { sets.push('name = ?'); args.push(String(b.name)); }
+    if (b.category) { sets.push('category = ?'); args.push(String(b.category)); }
+    if (b.colorName !== undefined) { sets.push('color_name = ?'); args.push(b.colorName ? String(b.colorName) : null); }
+    if (b.brand !== undefined) { sets.push('brand = ?'); args.push(b.brand ? String(b.brand) : null); }
+    if (b.price !== undefined) { sets.push('price = ?'); args.push(b.price === null || b.price === '' ? null : Number(b.price)); }
+    if (b.imageUrl) { sets.push('image_url = ?'); args.push(String(b.imageUrl)); }
+    if (!sets.length) return fail(res, 400, '没有需要更新的字段');
+
+    try {
+      await db.execute({
+        sql: `UPDATE wardrobe_items SET ${sets.join(', ')}, updated_at = datetime('now') WHERE id = ?`,
+        args: [...args, String(b.id)],
+      });
+      return ok(res, { id: b.id, updated: sets.length });
+    } catch (e) {
+      return fail(res, 500, '更新单品失败', e instanceof Error ? e.message : String(e));
     }
   }
 
