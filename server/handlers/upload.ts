@@ -9,9 +9,12 @@
  *   REMOVE_BG_API_KEY remove.bg 官方 API Key（https://www.remove.bg/dashboard#api-key）
  *   两者都配时优先 REMBG_API_URL（自有服务优先，省第三方额度）
  *
- * ⚠️ 环境变量：BLOB_READ_WRITE_TOKEN
- *   在 Vercel 项目 → Storage → Create Blob Store → Connect，会自动注入，
- *   本地 vercel dev 会在 vercel env pull 后可用。
+ * ⚠️ 环境变量（两种认证模式，二选一即可）：
+ *   A. OIDC（Vercel 官方推荐）：Dashboard → Storage → Create Blob Store(access=Public)
+ *      → Connect to Project，Vercel 自动注入 BLOB_STORE_ID + OIDC 凭证，**无需任何手写token**
+ *   B. 长效token：Store → Tokens → Create Token（勾 Public Access）
+ *      →手动加 BLOB_READ_WRITE_TOKEN（代码外部运行/client upload 才需要）
+ *   判定入口统一走 blobReady()，两种模式都能识别；本地需 vercel link && vercel env pull .env
  *
  * 为什么选 Vercel Blob 而不是先上 Cloudinary：
  *   零配置、同平台计费、SDK 一行搞定；Cloudinary 的图片处理/抠图
@@ -21,6 +24,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { put } from '@vercel/blob';
 import { cors, ok, fail } from '../lib/http';
 import { uuid } from '../lib/db';
+import { probeBlob, blobAuthMode } from '../lib/blob';
 
 /** 抠图超时：8s 拿不到就当没有，主链路（原图）早已落 Blob 成功 */
 const CUTOUT_TIMEOUT_MS = 8000;
@@ -74,12 +78,15 @@ export async function handler(req: VercelRequest, res: VercelResponse) {
       : process.env.REMOVE_BG_API_KEY
         ? 'remove.bg'
         : null;
+    const blob = await probeBlob();
     return ok(res, {
       storage: 'vercel-blob',
-      ready: Boolean(process.env.BLOB_READ_WRITE_TOKEN),
-      hint: process.env.BLOB_READ_WRITE_TOKEN
-        ? 'Blob 已就绪'
-        : '缺少 BLOB_READ_WRITE_TOKEN：在 Vercel → Storage → Blob 创建并连接后自动注入',
+      ready: blob.ready,
+      authMode: blobAuthMode(),
+      detail: blob.detail,
+      hint: blob.ready
+        ? 'Blob 已就绪，可直接上传'
+        : blob.detail,
       cutout: {
         ready: Boolean(cutoutProvider),
         provider: cutoutProvider,
@@ -124,9 +131,16 @@ export async function handler(req: VercelRequest, res: VercelResponse) {
     return ok(res, { url: blob.url, cutoutUrl, size: buf.length });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    const hint = msg.includes('BLOB_READ_WRITE_TOKEN') || msg.includes('No token')
-      ? '未配置 BLOB_READ_WRITE_TOKEN，去 Vercel → Storage 创建 Blob Store 并连接项目'
-      : '上传失败';
+    // 判定要覆盖 OIDC 与 token 两种模式的报错措辞，否则改成 OIDC 后提示会指向错误方向
+    const noAuth = /BLOB_READ_WRITE_TOKEN|BLOB_STORE_ID|No token|missing token|oidc/i.test(msg);
+    const blocked = /suspend|blocked/i.test(msg);
+    const hint = noAuth
+      ? (blocked
+        ? 'Blob store 被 Vercel 封停（多半是 Hobby 用量超限）。代码侧无解，请提 Vercel Support 工单恢复。'
+        : '未连接 Blob store：Vercel → Storage → Create Blob Store（access 选 Public）→ Connect to Project')
+      : blocked
+        ? 'Blob store 被 Vercel 封停，请在 Storage → Store 详情看用量是否超限，超了只能提工单。'
+        : '上传失败';
     return fail(res, 500, hint, msg);
   }
 }

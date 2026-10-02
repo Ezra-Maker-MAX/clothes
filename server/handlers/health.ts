@@ -10,6 +10,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getDb } from '../lib/db';
 import { cors, ok, clientIp } from '../lib/http';
 import { weatherStatus, getWeather } from '../lib/weather';
+import { blobHealth } from '../lib/blob';
 
 const TABLES = ['users', 'wardrobe_items', 'outfit_history', 'daily_recommendations'];
 
@@ -38,6 +39,7 @@ export async function handler(req: VercelRequest, res: VercelResponse) {
           + '请执行 turso db create 拿到 URL，再在 Vercel 或本地 .env 中配置。',
       env_needed: ['TURSO_URL', 'TURSO_AUTH_TOKEN'],
       weather: { ...weatherStatus(), live: await liveWeather(req) },
+      blob: await blobHealth(),
       sample: {
         app: '衣念',
         tables: { users: 1, wardrobe_items: 3, outfit_history: 1, daily_recommendations: 0 },
@@ -64,6 +66,7 @@ export async function handler(req: VercelRequest, res: VercelResponse) {
       db: String(process.env.TURSO_URL).replace(/libsql:\/\/(.+?)\..*/, 'libsql://$1…'),
       tables: counts,
       weather: { ...weatherStatus(), live: await liveWeather(req) },
+      blob: await blobHealth(),
       time: new Date().toISOString(),
     });
   } catch (e) {
@@ -71,6 +74,7 @@ export async function handler(req: VercelRequest, res: VercelResponse) {
       mode: 'turso_uninitialized',
       hint: '连接成功但查询失败，请先执行 db/schema.sql 建表：'
           + 'turso db shell <库名> < db/schema.sql',
+      blob: await blobHealth(),
       error: e instanceof Error ? e.message : String(e),
     });
   }
