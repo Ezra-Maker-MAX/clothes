@@ -20,3 +20,17 @@ export function ok(res: VercelResponse, data: unknown): void {
 export function fail(res: VercelResponse, code: number, message: string, extra?: unknown): void {
   res.status(code).json({ ok: false, error: message, detail: extra ?? null });
 }
+
+/**
+ * 取访问者真实 IP（用于天气自动定位）。
+ * Vercel 优先 x-vercel-forwarded-for，其次 x-forwarded-for / x-real-ip；
+ * 本地 vercel dev / pnpm local 没有这些头，返回空串（跳过定位）。
+ */
+export function clientIp(req: VercelRequest): string {
+  const pick = (v: string | string[] | undefined): string =>
+    (Array.isArray(v) ? v[0] : v ?? '').split(',')[0]?.trim() ?? '';
+  const h = req.headers ?? {};
+  return pick(h['x-vercel-forwarded-for'] as string | undefined) ||
+    pick(h['x-forwarded-for'] as string | undefined) ||
+    pick(h['x-real-ip'] as string | undefined);
+}

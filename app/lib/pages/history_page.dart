@@ -8,6 +8,7 @@ import '../models/models.dart';
 import '../services/api_client.dart';
 import '../services/mock_data.dart';
 import '../theme/app_colors.dart';
+import 'history_detail_page.dart';
 
 class HistoryPage extends StatefulWidget {
   const HistoryPage({super.key});
@@ -223,7 +224,7 @@ class _HistoryPageState extends State<HistoryPage> {
     );
   }
 
-  // ---- 时间线卡片：左轴 + emoji + 场合标签 + 洞察文案 + 评分 ----
+  // ---- 时间线卡片：左轴 + emoji + 场合标签 + 洞察文案 + 评分（点击进详情） ----
   Widget _timelineCard(HistoryEntry e) {
     return IntrinsicHeight(
       child: Row(
@@ -244,55 +245,84 @@ class _HistoryPageState extends State<HistoryPage> {
             ),
           ),
           Expanded(
-            child: Container(
-              margin: const EdgeInsets.only(bottom: 12, left: 6),
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: AppColors.card,
-                borderRadius: BorderRadius.circular(AppColors.radius),
-                boxShadow: AppColors.softShadow,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Text(e.emoji, style: const TextStyle(fontSize: 22)),
-                      const SizedBox(width: 8),
-                      Text(e.date,
-                          style: const TextStyle(
-                              fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.textMain)),
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: AppColors.primarySoft,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Text(e.occasionLabel,
+            child: GestureDetector(
+              onTap: () => _openDetail(e),
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 12, left: 6),
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: AppColors.card,
+                  borderRadius: BorderRadius.circular(AppColors.radius),
+                  boxShadow: AppColors.softShadow,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text(e.emoji, style: const TextStyle(fontSize: 22)),
+                        const SizedBox(width: 8),
+                        Text(e.date,
                             style: const TextStyle(
-                                fontSize: 10, color: AppColors.primary, fontWeight: FontWeight.w600)),
-                      ),
-                      const Spacer(),
-                      // 满意度
-                      ...List.generate(5, (s) {
-                        return Icon(
-                          s < e.rating ? Icons.star_rounded : Icons.star_outline_rounded,
-                          size: 13,
-                          color: s < e.rating ? AppColors.accent : AppColors.divider,
-                        );
-                      }),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Text(e.summary,
-                      style: const TextStyle(fontSize: 12.5, color: AppColors.textSub, height: 1.5)),
-                ],
+                                fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.textMain)),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: AppColors.primarySoft,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(e.occasionLabel,
+                              style: const TextStyle(
+                                  fontSize: 10, color: AppColors.primary, fontWeight: FontWeight.w600)),
+                        ),
+                        // 写了日记就挂个小标记，省得翻进去才发现
+                        if (e.notes.isNotEmpty) ...[
+                          const SizedBox(width: 6),
+                          const Icon(Icons.edit_note_rounded, size: 15, color: AppColors.accent),
+                        ],
+                        const Spacer(),
+                        // 满意度
+                        ...List.generate(5, (s) {
+                          return Icon(
+                            s < e.rating ? Icons.star_rounded : Icons.star_outline_rounded,
+                            size: 13,
+                            color: s < e.rating ? AppColors.accent : AppColors.divider,
+                          );
+                        }),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(e.summary,
+                        style: const TextStyle(fontSize: 12.5, color: AppColors.textSub, height: 1.5)),
+                    const SizedBox(height: 6),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        Text(
+                          e.notes.isNotEmpty ? '查看详情 · 日记' : '查看详情',
+                          style: const TextStyle(
+                              fontSize: 11, color: AppColors.primary, fontWeight: FontWeight.w600),
+                        ),
+                        const Icon(Icons.chevron_right_rounded, size: 15, color: AppColors.primary),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
         ],
       ),
     );
+  }
+
+  /// 进详情页：写日记 / 改星级都发生在那里，回来后刷新让标记立刻生效
+  Future<void> _openDetail(HistoryEntry e) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => HistoryDetailPage(entry: e)),
+    );
+    if (_real && mounted) _load();
   }
 }

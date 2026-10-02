@@ -10,6 +10,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/models.dart';
 import 'mock_data.dart';
@@ -48,12 +49,33 @@ class ApiClient {
   }
 
   // ---------------------------------------------------------------
-  // 今日推荐：GET /api/recommend?userId=&occasion=&tempC=[&refresh=1]
+  // 常驻城市（设置页手动指定；留空 = 服务端按访问 IP 自动定位）
+  // ---------------------------------------------------------------
+  static const String weatherCityKey = 'wx_city';
+
+  static Future<String> weatherCity() async {
+    try {
+      final sp = await SharedPreferences.getInstance();
+      return (sp.getString(weatherCityKey) ?? '').trim();
+    } catch (_) {
+      return '';
+    }
+  }
+
+  static Future<void> setWeatherCity(String city) async {
+    final sp = await SharedPreferences.getInstance();
+    await sp.setString(weatherCityKey, city.trim());
+  }
+
+  // ---------------------------------------------------------------
+  // 今日推荐：GET /api/recommend?userId=&occasion=[&refresh=1][&location=]
+  //   ⚠️ tempC 默认【不传】：传了会覆盖服务端真实天气（曾经一直锁死 24°C，
+  //      表现就是"天气永远不变"）。仅调试时手动传值。
   // ---------------------------------------------------------------
   static Future<OutfitRecommendation> getRecommendation({
     String occasion = 'commute',
     bool refresh = false,
-    int tempC = 24,
+    int? tempC,
   }) async {
     if (useMock) {
       // 模拟「换一套」轮换 + 网络延迟，让交互手感真实
@@ -62,14 +84,20 @@ class ApiClient {
       _mockCursor = (_mockCursor + (refresh ? 1 : 0)) % pool.length;
       return pool[_mockCursor];
     }
-    final res = await _http
-        .get(Uri.parse(
-          '$baseUrl/api/recommend?userId=$demoUserId&occasion=$occasion'
-          '${refresh ? '&refresh=1' : ''}&tempC=$tempC',
-        ))
-        .timeout(_genTimeout);
+    final city = await weatherCity();
+    final uri = Uri.parse('$baseUrl/api/recommend').replace(
+      queryParameters: {
+        'userId': demoUserId,
+        'occasion': occasion,
+        if (refresh) 'refresh': '1',
+        if (city.isNotEmpty) 'location': city,
+        if (tempC != null) 'tempC': '$tempC',
+      },
+    );
+    final res = await _http.get(uri).timeout(_genTimeout);
     final body = _data(res);
     final w = (body['weather'] as Map<String, dynamic>?) ?? {};
+    final cityRaw = (w['city'] as String? ?? '').trim();
     return OutfitRecommendation(
       occasion: body['occasion'] as String? ?? occasion,
       occasionLabel: _occasionLabel(body['occasion'] as String? ?? occasion),
@@ -78,7 +106,7 @@ class ApiClient {
         feelsLike: (w['feelsLike'] as num?)?.toInt() ?? 25,
         condition: w['condition'] as String? ?? '多云',
         label: _tempLabel((w['feelsLike'] as num?)?.toInt() ?? 25),
-        city: w['city'] as String? ?? '本地',
+        city: cityRaw.isEmpty ? '本地' : cityRaw,
       ),
       top: _item((body['items'] as Map)['top'] as Map<String, dynamic>, '上衣', '👚'),
       bottom: _item((body['items'] as Map)['bottom'] as Map<String, dynamic>, '裤装', '👖'),
@@ -105,6 +133,10 @@ class ApiClient {
               'condition': outfit.weather.condition,
               'city': outfit.weather.city,
             },
+            // 一并存档推荐文案：历史详情页要能复原"那天为什么这么搭"
+            'reason': outfit.reason,
+            'makeup': outfit.makeup,
+            'rating': 5,
           }),
         )
         .timeout(_fastTimeout);
@@ -144,11 +176,25 @@ class ApiClient {
       final occasionKey = r['occasion'] as String? ?? 'casual';
       final names = ((r['itemNames'] as List?) ?? []).map((e) => e as String).toList();
       final dateStr = _formatDate(r['worn_date'] as String? ?? '');
+      final reason = (r['reason'] as String? ?? '').trim();
+      final notes = (r['notes'] as String? ?? '').trim();
       final summary = names.isNotEmpty
           ? '${names.join(' + ')}。'
-          : (r['reason'] as String? ?? '今天这一身，记下就好。');
+          : (reason.isNotEmpty ? reason : '今天这一身，记下就好。');
       final rating = (r['rating'] as num?)?.toInt() ?? 5;
+      // 详情页大图用：服务端已把当日单品 join 出来（id/名称/图片/颜色）
+      final briefs = ((r['items'] as List?) ?? []).map((e) {
+        final m = e as Map<String, dynamic>;
+        return HistoryItemBrief(
+          id: m['id'] as String? ?? '',
+          name: m['name'] as String? ?? '单品',
+          imageUrl: m['imageUrl'] as String? ?? '',
+          colorName: m['colorName'] as String? ?? '',
+        );
+      }).toList();
+      final w = r['weather'] as Map<String, dynamic>?;
       return HistoryEntry(
+        id: r['id'] as String? ?? '',
         date: dateStr,
         rawDate: r['worn_date'] as String? ?? '',
         occasionLabel: _occasionLabel(occasionKey),
@@ -163,11 +209,45 @@ class ApiClient {
         itemIds: ((r['itemIds'] as List?) ?? []).map((e) => e as String).toList(),
         source: r['source'] as String? ?? 'recommended',
         rating: rating,
+        notes: notes,
+        reason: reason,
+        makeup: (r['makeup'] as String? ?? '').trim(),
+        outfitName: (r['outfitName'] as String? ?? '').trim(),
+        items: briefs,
+        tempC: (w?['tempC'] as num?)?.toInt(),
+        condition: w?['condition'] as String? ?? '',
+        city: w?['city'] as String? ?? '',
       );
     }).toList();
     // 时间线统一按日期倒序（新→旧），不依赖服务端排序；无日期的沉底
     entries.sort((a, b) => b.rawDate.compareTo(a.rawDate));
     return entries;
+  }
+
+  /// 保存穿搭日记 / 改星级：PATCH /api/history（详情页「写日记」用）
+  static Future<void> updateHistory({
+    required String id,
+    String? notes,
+    int? rating,
+    String? outfitName,
+  }) async {
+    if (useMock) return;
+    if (id.isEmpty) throw Exception('这条记录缺少 id，无法保存（可能是演示数据）');
+    final body = <String, dynamic>{
+      'userId': demoUserId,
+      'id': id,
+      if (notes != null) 'notes': notes,
+      if (rating != null) 'rating': rating,
+      if (outfitName != null) 'outfitName': outfitName,
+    };
+    final res = await _http
+        .patch(
+          Uri.parse('$baseUrl/api/history'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode(body),
+        )
+        .timeout(_fastTimeout);
+    _ensureOk(res);
   }
 
   /// 首页三卡统计：衣橱总数 / 本月搭配 / 未穿单品（真实模式）

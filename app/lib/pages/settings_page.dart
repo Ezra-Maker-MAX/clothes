@@ -30,6 +30,7 @@ class _SettingsPageState extends State<SettingsPage> {
   final _pathCtrl = TextEditingController();
   final _keyCtrl = TextEditingController();
   final _orderCtrl = TextEditingController();
+  final _cityCtrl = TextEditingController();
 
   @override
   void initState() {
@@ -44,19 +45,31 @@ class _SettingsPageState extends State<SettingsPage> {
     _pathCtrl.dispose();
     _keyCtrl.dispose();
     _orderCtrl.dispose();
+    _cityCtrl.dispose();
     super.dispose();
   }
 
   Future<void> _load() async {
     final c = await TryonService.loadConfig();
+    final city = await ApiClient.weatherCity();
     if (!mounted) return;
     setState(() {
       _config = c;
       _baseCtrl.text = c.baseUrl;
       _pathCtrl.text = c.path;
       _keyCtrl.text = c.apiKey;
+      _cityCtrl.text = city;
       _loaded = true;
     });
+  }
+
+  /// 保存常驻城市（空串 = 服务端按访问 IP 自动定位）
+  Future<void> _saveCity({bool clear = false}) async {
+    final v = clear ? '' : _cityCtrl.text.trim();
+    await ApiClient.setWeatherCity(v);
+    if (!mounted) return;
+    if (clear) _cityCtrl.clear();
+    _snack(clear ? '已切回自动定位' : (v.isEmpty ? '已切回自动定位' : '城市已设为「$v」'));
   }
 
   /// 字段变更 → 防抖 800ms 落盘（输入过程不频繁写盘）
@@ -105,6 +118,9 @@ class _SettingsPageState extends State<SettingsPage> {
           : ListView(
               padding: const EdgeInsets.fromLTRB(20, 4, 20, 32),
               children: [
+                _sectionTitle('天气 · 常驻城市', '精准推荐'),
+                _cityCard(),
+                const SizedBox(height: 20),
                 _sectionTitle('虚拟试衣 · 自部署模型', '实验性'),
                 _tryonCard(),
                 const SizedBox(height: 20),
@@ -237,6 +253,77 @@ class _SettingsPageState extends State<SettingsPage> {
                   style: const TextStyle(fontSize: 10.5, color: AppColors.accent)),
             ),
           ],
+        ],
+      ),
+    );
+  }
+
+  /// 常驻城市：留空 = 服务端按访问 IP 自动定位（推荐）；填城市名 = 以你填的为准
+  Widget _cityCard() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(AppColors.radius),
+        boxShadow: AppColors.softShadow,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.location_on_rounded, size: 20, color: AppColors.primary),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text('你所在的城市',
+                    style: TextStyle(
+                        fontSize: 14.5, fontWeight: FontWeight.w600, color: AppColors.textMain)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          const Text('留空 = 按当前网络自动定位（推荐，桌面和手机都生效）；'
+              '填城市名则以你填的为准，出差/跨城时更准。',
+              style: TextStyle(fontSize: 11.5, color: AppColors.textSub, height: 1.5)),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _cityCtrl,
+            style: const TextStyle(fontSize: 13, color: AppColors.textMain),
+            decoration: InputDecoration(
+              hintText: '留空自动定位，或填：杭州 / Beijing',
+              hintStyle: const TextStyle(fontSize: 12, color: AppColors.textHint),
+              filled: true,
+              fillColor: AppColors.bg,
+              isDense: true,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide.none,
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              TextButton(
+                onPressed: () => _saveCity(clear: true),
+                child: const Text('清空，自动定位',
+                    style: TextStyle(fontSize: 12.5, color: AppColors.textSub)),
+              ),
+              const SizedBox(width: 4),
+              FilledButton(
+                onPressed: () => _saveCity(),
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                  minimumSize: const Size(0, 34),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                child: const Text('保存', style: TextStyle(fontSize: 12.5)),
+              ),
+            ],
+          ),
         ],
       ),
     );

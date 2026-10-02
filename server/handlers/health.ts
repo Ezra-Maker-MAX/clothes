@@ -8,7 +8,8 @@
  */
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getDb } from '../lib/db';
-import { cors, ok } from '../lib/http';
+import { cors, ok, clientIp } from '../lib/http';
+import { weatherStatus, getWeather } from '../lib/weather';
 
 const TABLES = ['users', 'wardrobe_items', 'outfit_history', 'daily_recommendations'];
 
@@ -36,6 +37,7 @@ export async function handler(req: VercelRequest, res: VercelResponse) {
       hint: '检测到未配置 TURSO_URL / TURSO_AUTH_TOKEN，当前返回演示数据。'
           + '请执行 turso db create 拿到 URL，再在 Vercel 或本地 .env 中配置。',
       env_needed: ['TURSO_URL', 'TURSO_AUTH_TOKEN'],
+      weather: { ...weatherStatus(), live: await liveWeather(req) },
       sample: {
         app: '衣念',
         tables: { users: 1, wardrobe_items: 3, outfit_history: 1, daily_recommendations: 0 },
@@ -61,6 +63,7 @@ export async function handler(req: VercelRequest, res: VercelResponse) {
       mode: 'turso',
       db: String(process.env.TURSO_URL).replace(/libsql:\/\/(.+?)\..*/, 'libsql://$1…'),
       tables: counts,
+      weather: { ...weatherStatus(), live: await liveWeather(req) },
       time: new Date().toISOString(),
     });
   } catch (e) {
@@ -70,5 +73,18 @@ export async function handler(req: VercelRequest, res: VercelResponse) {
           + 'turso db shell <库名> < db/schema.sql',
       error: e instanceof Error ? e.message : String(e),
     });
+  }
+}
+
+/** 实测一次天气（IP 自动定位是否生效一目了然，排查"天气一直上海"用） */
+async function liveWeather(req: VercelRequest) {
+  try {
+    const w = await getWeather({ ip: clientIp(req) });
+    return {
+      tempC: w.tempC, feelsLike: w.feelsLike, condition: w.condition,
+      city: w.city, source: w.source, locatedBy: w.locatedBy,
+    };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : String(e) };
   }
 }

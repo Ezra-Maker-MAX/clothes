@@ -95,7 +95,12 @@ export async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     const buf = Buffer.from(String(b.dataBase64), 'base64');
-    if (buf.length > 8 * 1024 * 1024) return fail(res, 413, '图片超过 8MB，先压缩再传');
+    // ⚠️ Vercel Serverless Function 请求体硬上限 4.5MB（Hobby 计划不可调），
+    // 且 base64 会让体积膨胀约 33% → 原始图片必须 ≤3MB。
+    // 客户端（image_picker 原生压缩）已保证，这里是兜底：真收到超限请求，
+    // 说明客户端还是旧版（file_picker 在 Android 不压缩），提示升级而不是含糊报错。
+    if (buf.length > 3 * 1024 * 1024)
+      return fail(res, 413, '图片超过 3MB，请用最新版 App 上传（新版会自动压缩）');
 
     const safeName = String(b.filename).replace(/[^\w.-]/g, '_');
     const blob = await put(`wardrobe/${uuid()}-${safeName}`, buf, {

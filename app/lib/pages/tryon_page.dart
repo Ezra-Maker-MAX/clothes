@@ -8,13 +8,13 @@
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:share_plus/share_plus.dart';
 
 import '../models/models.dart';
 import '../services/api_client.dart';
+import '../services/image_service.dart';
 import '../services/tryon_service.dart';
 import '../theme/app_colors.dart';
 
@@ -80,31 +80,41 @@ class _TryonPageState extends State<TryonPage> {
       _snack('最多 $_maxPerson 张人像，删一张再加');
       return;
     }
-    final file = await FilePicker.pickFile(type: FileType.image, compressionQuality: 70);
-    if (file == null) return;
-    final bytes = await file.readAsBytes();
-    if (!mounted) return;
-    setState(() => _personImages.add(bytes));
+    final img = await _pick(label: '人像', maxWidth: 1280, quality: 88);
+    if (img == null || !mounted) return;
+    setState(() => _personImages.add(img.bytes));
   }
 
   Future<void> _pickPose() async {
-    final file = await FilePicker.pickFile(type: FileType.image, compressionQuality: 70);
-    if (file == null) return;
-    final bytes = await file.readAsBytes();
-    if (!mounted) return;
-    setState(() => _poseBytes = bytes);
+    final img = await _pick(label: '姿势图', maxWidth: 1280, quality: 85);
+    if (img == null || !mounted) return;
+    setState(() => _poseBytes = img.bytes);
   }
 
   /// 服装来源一：相册
   Future<void> _garmentFromGallery() async {
-    final file = await FilePicker.pickFile(type: FileType.image, compressionQuality: 70);
-    if (file == null) return;
-    final bytes = await file.readAsBytes();
-    if (!mounted) return;
+    final img = await _pick(label: '服装图');
+    if (img == null || !mounted) return;
     setState(() {
-      _garmentBytes = bytes;
-      _garmentLabel = file.name;
+      _garmentBytes = img.bytes;
+      _garmentLabel = img.filename;
     });
+  }
+
+  /// 统一选图入口：原生压缩 + 超限提示，失败只弹提示不崩页面
+  Future<PickedImage?> _pick({
+    required String label,
+    int maxWidth = 1600,
+    int quality = 82,
+  }) async {
+    try {
+      return await pickImage(label: label, maxWidth: maxWidth, quality: quality);
+    } catch (e) {
+      if (mounted) {
+        _snack(e.toString().replaceFirst(RegExp(r'^Bad state:\s*'), ''));
+      }
+      return null;
+    }
   }
 
   /// 服装来源二：衣橱单品（网络图 → 下载到内存，不落盘不传云端）

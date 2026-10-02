@@ -172,6 +172,21 @@ class HomeStats {
       const HomeStats(wardrobeItems: 47, monthOutfits: 18, neverWorn: 9);
 }
 
+/// 历史里的一件单品（详情页大图用；比 ItemInfo 轻，不含分类/价格等）
+class HistoryItemBrief {
+  const HistoryItemBrief({
+    required this.id,
+    required this.name,
+    this.imageUrl = '',
+    this.colorName = '',
+  });
+
+  final String id;
+  final String name;
+  final String imageUrl;
+  final String colorName;
+}
+
 /// 历史页条目（对应 outfit_history）
 class HistoryEntry {
   const HistoryEntry({
@@ -179,14 +194,32 @@ class HistoryEntry {
     required this.occasionLabel,
     required this.summary,
     required this.emoji,
+    this.id = '',
     this.rawDate = '',
     this.itemIds = const [],
     this.source = 'recommended',
     this.rating = 5,
+    this.notes = '',
+    this.reason = '',
+    this.makeup = '',
+    this.outfitName = '',
+    this.items = const [],
+    this.tempC,
+    this.condition = '',
+    this.city = '',
   });
 
   final String date;          // 10月1日
   final String rawDate;       // 原始 'YYYY-MM-DD'（穿搭日记日历按月点亮，防跨月错亮）
+  final String id;            // 服务端记录 id（日记保存/改星级要用）
+  final String notes;         // 用户手写穿搭日记
+  final String reason;        // 当日推荐理由存档
+  final String makeup;        // 妆容建议存档
+  final String outfitName;    // 自定义搭配名
+  final List<HistoryItemBrief> items; // 当日单品（含图片，详情页铺大图）
+  final int? tempC;           // 当日气温（null = 旧数据没记）
+  final String condition;     // 当日天气描述
+  final String city;          // 当日城市
   final String occasionLabel; // 日常通勤
   final String summary;       // 一句话回溯
   final String emoji;

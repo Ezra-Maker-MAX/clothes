@@ -2,11 +2,11 @@
 // 名称 + 动态分类 chips + 颜色 + 品牌 + 价格 + 图片（可选，/api/upload 落 Blob）
 import 'dart:typed_data';
 
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../models/models.dart';
 import '../services/api_client.dart';
+import '../services/image_service.dart';
 import '../theme/app_colors.dart';
 
 class ItemFormSheet extends StatefulWidget {
@@ -70,28 +70,30 @@ class _ItemFormSheetState extends State<ItemFormSheet> {
     super.dispose();
   }
 
-  /// 选图 → 上传 Blob → 加入多图列表（compressionQuality 顺带压缩大图）
+  /// 选图 → 压缩（原生，规避 413）→ 上传 Blob → 加入多图列表
   /// 服务端若配置了 AI 抠图，cutoutUrl（去背 PNG）优先作为主图
   Future<void> _pickImage() async {
     if (_imageUrls.length >= _maxImages) {
       _snack('最多 $_maxImages 张图，删一张再加');
       return;
     }
-    final file = await FilePicker.pickFile(
-      type: FileType.image,
-      compressionQuality: 70,
-    );
-    if (file == null) return;
-    final bytes = await file.readAsBytes();
+    PickedImage? picked;
+    try {
+      picked = await pickImage(label: '图片');
+    } catch (e) {
+      if (mounted) _snack(e.toString().replaceFirst(RegExp(r'^Bad state:\s*'), ''));
+      return;
+    }
+    if (picked == null) return; // 用户取消
     setState(() {
-      _previewBytes = bytes;
+      _previewBytes = picked!.bytes;
       _uploading = true;
     });
     try {
       final r = await ApiClient.uploadImage(
-        bytes: bytes,
-        filename: file.name,
-        contentType: file.extension == 'png' ? 'image/png' : 'image/jpeg',
+        bytes: picked.bytes,
+        filename: picked.filename,
+        contentType: picked.contentType,
       );
       final finalUrl = r.cutoutUrl ?? r.url; // 去背图优先当主图
       if (mounted && finalUrl.isNotEmpty) {

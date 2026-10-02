@@ -7,12 +7,14 @@
  *  1) 查 daily_recommendations 缓存（UNIQUE: user+date+occasion）→ 命中直接返回
  *  2) refresh=1（前端"换一套"）→ 覆盖缓存重新生成，swap_count+1
  *  3) 生成：读衣橱 → 情景引擎（排重+厚度+正式度）→ 写缓存
- *  4) 天气：第三阶段已接和风天气 API（?location= 城市ID；缺 WEATHER_API_KEY 降级 mock）
- *     真实体感温度写进 weather_snapshot 缓存，前端据此渲染天气卡与推荐理由
+ *  4) 天气：和风天气 API + IP 自动定位城市（未配 WEATHER_API_KEY 时温度降级 mock 24°C，
+ *     但城市名仍按访问 IP 定位，不会再永远显示"上海"）
+ *
+ * 环境变量：WEATHER_API_KEY（必需，取真实温度）/ WEATHER_LOCATION（可选，固定城市，优先级高于 IP 定位）
  */
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getDb, uuid, todayCn } from '../lib/db';
-import { cors, ok, fail } from '../lib/http';
+import { cors, ok, fail, clientIp } from '../lib/http';
 import { pickOutfit, buildReason, MAKEUP } from '../lib/engine';
 import type { WardrobeItem, Occasion, WeatherSnapshot } from '../lib/types';
 import { getWeather } from '../lib/weather';
@@ -49,16 +51,19 @@ export async function handler(req: VercelRequest, res: VercelResponse) {
   const location = req.query.location ? String(req.query.location) : undefined;
   const overrideTemp = req.query.tempC ? Number(req.query.tempC) : null;
 
-  // 实时天气：优先和风 API（WEATHER_API_KEY 缺失/异常时降级 mock）；
-  // query 传入 tempC 可覆盖，便于无 KEY 时演示不同温度的推荐差异
-  const wx = await getWeather({ location });
+  // 实时天气：和风 API（缺 KEY/异常降级 mock）+ IP 自动定位城市；
+  // query 传 tempC 仍可覆盖（仅调试演示用，App 端默认不传，避免锁死 24°C）
+  const wx = await getWeather({ location, ip: clientIp(req) });
   const tempC = overrideTemp ?? wx.tempC;
   const weather: WeatherSnapshot = {
     tempC, feelsLike: wx.feelsLike, condition: wx.condition, city: wx.city,
   };
 
   if (!db) {
-    return ok(res, { mode: 'mock', weatherSource: wx.source, ...MOCK_RECOMMEND, weather });
+    return ok(res, {
+      mode: 'mock', weatherSource: wx.source, weatherLocatedBy: wx.locatedBy,
+      ...MOCK_RECOMMEND, weather,
+    });
   }
 
   try {
@@ -77,7 +82,10 @@ export async function handler(req: VercelRequest, res: VercelResponse) {
         });
         return ok(res, {
           mode: 'turso', fromCache: true, id: row.id,
-          occasion, date, weather: JSON.parse(String(row.weather_snapshot ?? '{}')),
+          occasion, date,
+          weatherSource: wx.source, weatherLocatedBy: wx.locatedBy,
+          // 天气以本次实时结果为准：缓存里的快照可能是几小时前的旧城市
+          weather,
           ...JSON.parse(String(row.outfit_json)),       // items + reason + makeup
         });
       }

@@ -87,6 +87,12 @@ export async function ensureSchema(): Promise<void> {
     } catch {
       // 已迁移过
     }
+    // 穿搭日记：用户手写日记（详情页可编辑保存）
+    try {
+      await db.execute(`ALTER TABLE outfit_history ADD COLUMN notes TEXT`);
+    } catch {
+      // 已迁移过
+    }
     schemaReady = true;
   } catch (e) {
     // 迁移失败不阻断请求：调用方各自降级（分类用内置、价格不展示）

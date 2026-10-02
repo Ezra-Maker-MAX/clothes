@@ -103,6 +103,7 @@ CREATE TABLE IF NOT EXISTS outfit_history (
   reason               TEXT,                    -- 推荐理由存档（情绪价值文案）
   rating               INTEGER CHECK (rating BETWEEN 1 AND 5),  -- 满意度
   feedback             TEXT,                    -- 一句话感受
+  notes                TEXT,                    -- 用户手写穿搭日记（详情页可编辑保存）
   source               TEXT NOT NULL DEFAULT 'recommended',  -- recommended/manual
   created_at           TEXT NOT NULL DEFAULT (datetime('now'))
 );
