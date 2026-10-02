@@ -43,7 +43,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   cors(req, res);
   if (req.method === 'OPTIONS') return res.status(204).end();
 
-  const action = String(req.query.action ?? '').toLowerCase();
+  const action = resolveAction(req);
   const h = routes[action];
   if (!h) return fail(res, 404, `未知接口 /api/${action}`);
   try {
@@ -52,4 +52,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // 兜底：任何未捕获异常统一 500，避免函数裸崩
     return fail(res, 500, '服务开小差了', e instanceof Error ? e.message : String(e));
   }
+}
+
+/**
+ * 解析接口名，双格式兼容：
+ * 1) 路径形式 /api/health（App 端实际使用，vercel.json routes 会注入 ?action=，
+ *    此处兜底直接从 URL 解析，routes 注入行为万一变化也不受影响）；
+ * 2) 查询形式 /api?action=health（浏览器自检/手动测试用）。
+ */
+function resolveAction(req: VercelRequest): string {
+  const q = String(req.query.action ?? '').toLowerCase();
+  if (q) return q;
+  const m = /^\/api\/([^/?#]+)/.exec(String(req.url ?? ''));
+  const seg = m?.[1] ?? '';
+  // routes 重写后 url 若变成 /api/gateway.ts 自身，不算接口名
+  return seg === 'gateway.ts' ? '' : decodeURIComponent(seg).toLowerCase();
 }
