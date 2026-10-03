@@ -1,12 +1,30 @@
 # ============================================================
-# Android APK 打包工作流
+# Android APK 打包工作流（GitHub Actions）
+#
 # 触发：打 tag（v*）或手动 workflow_dispatch
-# 产物：Actions Artifacts（30天）+ GitHub Releases（永久）
+# 产物：Actions Artifacts（30 天）+ GitHub Releases（永久）
+#
+# ── 为什么签名材料走 Secrets 而不是提交进仓库 ──
+# keystore 私钥 + key.properties 口令一旦入库，**任何拿到仓库的人都能签出
+# 同包名的「官方」包覆盖用户安装**。所以 .gitignore 排除了 *.p12 / key.properties，
+# CI 里从 Secrets 还原：私钥只存在于 GitHub 的加密存储与 runner 的临时目录，
+# 任务结束即销毁。
+#
+# ── 首次启用需在仓库 Settings → Secrets and variables → Actions 添加 ──
+#   ANDROID_KEYSTORE_BASE64   keystore 文件的 base64（本地生成命令见下方步骤）
+#   ANDROID_KEYSTORE_PASSWORD  store口令
+#   ANDROID_KEY_ALIAS         keyAlias
+#   ANDROID_KEY_PASSWORD      key口令
+#   API_BASE_URL              后端地址（https://<项目名>.vercel.app）
+#   （可选）USE_MOCK           默认 false，真实模式；演示时才设 true
+#
+#⚠️ 缺任何一个签名 Secret 时，Gradle 会抛异常中断构建 —— 这是刻意的，
+#   绝不允许悄悄退回 debug 签名产出包。
 # ============================================================
 name: Build Android APK
 
 on:
-  workflow_dispatch:      # 手动触发：仓库页 Actions → Build Android APK → Run
+  workflow_dispatch:      # 手动触发：仓库页 Actions → Build Android APK → Run workflow
   push:
     tags: ["v*"]
 
@@ -15,7 +33,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest   # 自带 Android SDK + Flutter 可直接用
     steps:
       - uses: actions/checkout@v4
 
@@ -31,16 +49,72 @@ jobs:
           channel: stable
           cache: true
 
+      # ---- 签名材料还原（唯一接触私钥的步骤）----
+      # 从 Secrets 取出 base64 keystore 写回文件，并按 build.gradle.kts
+      # 期望的位置生成 key.properties。任务结束 runner 即销毁，不留痕迹。
+      - name: 还原签名材料
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PW: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PW: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "$KEYSTORE_B64" ]; then
+            echo "::error::缺少 Secret ANDROID_KEYSTORE_BASE64，无法签名构建。"
+            echo "请在 Settings → Secrets and variables → Actions 中添加（生成方法见 README）。"
+            exit 1
+          fi
+          cd app/android
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > yinian-release.p12
+          cat > key.properties <<EOF
+          storeFile=yinian-release.p12
+          storePassword=$STORE_PW
+          keyAlias=$KEY_ALIAS
+          keyPassword=$KEY_PW
+          EOF
+          echo "签名材料已还原（私钥仅存在于本次 runner 内存）"
+
       - name: 拉取依赖
         working-directory: app
         run: flutter pub get
 
+      # 静态检查与测试：签名问题之外，这一步能在出包前拦住编译错误与逻辑回归
+      - name: 静态检查
+        working-directory: app
+        run: flutter analyze
+
+      - name: 回归测试
+        working-directory: app
+        run: flutter test
+
       - name: 打 Release APK
         working-directory: app
-        run: flutter build apk --release --dart-define=USE_MOCK=false --dart-define=API_BASE_URL=https://clothes-sand-theta.vercel.app
+        env:
+          BASE_URL: ${{ secrets.API_BASE_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "$BASE_URL" ]; then
+            echo "::error::缺少 Secret API_BASE_URL"
+            exit 1
+          fi
+          flutter build apk --release \
+            --dart-define=USE_MOCK=false \
+            --dart-define=API_BASE_URL="$BASE_URL"
+
+      # 验证产物确实是 release 签名而非 debug：debug 签名的包无法通过商店审核，
+      # 且能被伪造覆盖，属于「构建成功但产物不可用」的隐性问题
+      - name: 校验签名（确认不是 debug key）
+        working-directory: app
+        run: |
+          set -euo pipefail
+          keytool -printcert -jarfile build/app/outputs/flutter-apk/app-release.apk \
+            | grep -q "CN=Yinian" \
+            || { echo "::error::产物不是 Yinian 的release 签名，请检查 Secrets"; exit 1; }
+          echo "签名校验通过：CN=Yinian"
 
       - name: 重命名 APK（带版本号）
-        run: cp app/build/app/outputs/flutter-apk/app-release.apk yinian-${{ github.ref_name }}.apk
+        run: cp app/build/app/outputs/flutter-apk/app-release.apk "yinian-${{ github.ref_name }}.apk"
 
       - name: 上传 Artifacts（30 天保留）
         uses: actions/upload-artifact@v4
@@ -53,4 +127,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: yinian-${{ github.ref_name }}.apk
-          body: 衣念 ${{ github.ref_name }} 安装包（已连接线上服务）
+          body: |
+            衣念 ${{ github.ref_name }} 安装包（release 签名，已连接线上服务）
+
+            - 后端地址：`${{ secrets.API_BASE_URL }}`
+            - 签名：CN=Yinian（release，非 debug）

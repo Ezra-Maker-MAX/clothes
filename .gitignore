@@ -22,3 +22,11 @@ app/.idea/
 # 系统文件
 .DS_Store
 *.log
+
+# ── Android release 签名材料（绝不入库）──
+# keystore 私钥 + key.properties 口令 = 任何拿到仓库的人都能签出你的包顶替安装。
+# 只提交 key.properties.example 模板，真实文件由你自己安全保管。
+*.jks
+*.keystore
+*.p12
+app/android/key.properties
