@@ -131,7 +131,7 @@ class _HomePageState extends State<HomePage> {
 
     // 加载态：给一句有调性的引导，而不是干巴巴的转圈
     if (_loading) {
-      return const Center(
+      return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -155,7 +155,7 @@ class _HomePageState extends State<HomePage> {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 32),
               child: Text(_error!,
-                  style: const TextStyle(color: AppColors.textMain, fontSize: 14),
+                  style: TextStyle(color: AppColors.textMain, fontSize: 14),
                   textAlign: TextAlign.center),
             ),
             if (_errorDetail != null) ...[
@@ -165,7 +165,7 @@ class _HomePageState extends State<HomePage> {
                 child: Text(_errorDetail!,
                     maxLines: 3,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: AppColors.textSub, fontSize: 11),
+                    style: TextStyle(color: AppColors.textSub, fontSize: 11),
                     textAlign: TextAlign.center),
               ),
             ],

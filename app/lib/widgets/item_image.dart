@@ -51,7 +51,7 @@ class ItemImage extends StatelessWidget {
             item.name,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 11.5,
               fontWeight: FontWeight.w600,
               color: AppColors.textMain,
@@ -59,7 +59,7 @@ class ItemImage extends StatelessWidget {
           ),
           if (item.colorName != null)
             Text(item.colorName!,
-                style: const TextStyle(fontSize: 10.5, color: AppColors.textSub)),
+                style: TextStyle(fontSize: 10.5, color: AppColors.textSub)),
         ],
       ),
     );

@@ -15,8 +15,14 @@ import 'package:share_plus/share_plus.dart';
 import '../models/models.dart';
 import '../services/api_client.dart';
 import '../services/image_service.dart';
+import '../services/private_body_store.dart';
+import '../services/private_mode_service.dart';
+import '../services/pose_library.dart';
 import '../services/tryon_service.dart';
 import '../theme/app_colors.dart';
+import '../widgets/pose_section.dart';
+import '../widgets/pose_library_sheet.dart';
+import '../widgets/private_style_section.dart';
 
 class TryonPage extends StatefulWidget {
   const TryonPage({super.key, this.presetGarment});
@@ -36,8 +42,15 @@ class _TryonPageState extends State<TryonPage> {
   Uint8List? _garmentBytes;
   String _garmentLabel = '还没选';
   Uint8List? _poseBytes;
+  /// 从姿势库选中的预设。**只存内存**：退出试衣间即消失，
+  /// 不写 SharedPreferences、不进历史 —— 职业拍摄场景的使用痕迹隐私要求。
+  PosePreset? _posePreset;
   bool _generating = false;
   String? _resultError;
+
+  /// 私密模式：情趣内衣风格（只在这台页面的内存里，退出即清，不留痕）
+  /// 词表在 widgets/private_style_section.dart —— UI 标签与 prompt 同源。
+  String? _privateStyle;
   Uint8List? _result;
 
   // 身体数据（可选）
@@ -146,7 +159,7 @@ class _TryonPageState extends State<TryonPage> {
             shrinkWrap: true,
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 20),
             children: [
-              const Padding(
+              Padding(
                 padding: EdgeInsets.only(bottom: 10),
                 child: Text('换哪件上机身？',
                     style: TextStyle(
@@ -162,9 +175,9 @@ class _TryonPageState extends State<TryonPage> {
                                     Text(it.emoji, style: const TextStyle(fontSize: 24))))
                         : Text(it.emoji, style: const TextStyle(fontSize: 24)),
                     title: Text(it.name,
-                        style: const TextStyle(fontSize: 14, color: AppColors.textMain)),
+                        style: TextStyle(fontSize: 14, color: AppColors.textMain)),
                     subtitle: Text(it.imageUrl == null ? '暂无图片（可用相册图代替）' : it.categoryLabel,
-                        style: const TextStyle(fontSize: 11.5, color: AppColors.textHint)),
+                        style: TextStyle(fontSize: 11.5, color: AppColors.textHint)),
                     onTap: () => Navigator.pop(ctx, it),
                   )),
             ],
@@ -196,15 +209,21 @@ class _TryonPageState extends State<TryonPage> {
       bust: parse(_bustCtrl),
       waist: parse(_waistCtrl),
       hips: parse(_hipsCtrl),
+      // 私密模式的详尽围度：只有解锁时才合并进请求
+      underbust: AppColors.privateMode ? PrivateBodyStore.measure('underbust') : null,
+      thighCm: AppColors.privateMode ? PrivateBodyStore.measure('thighCm') : null,
+      calfCm: AppColors.privateMode ? PrivateBodyStore.measure('calfCm') : null,
+      shoulderCm: AppColors.privateMode ? PrivateBodyStore.measure('shoulderCm') : null,
     );
     final empty = b.heightCm == null && b.weightKg == null && b.bust == null &&
-        b.waist == null && b.hips == null;
+        b.waist == null && b.hips == null && b.underbust == null &&
+        b.thighCm == null && b.calfCm == null && b.shoulderCm == null;
     return empty ? null : b;
   }
 
   Future<void> _generate() async {
     if (!_config.isReady) {
-      _snack('试衣服务还没配置好：去设置 → 虚拟试衣');
+      _snack('模型服务还没配置好：去设置 → 自部署模型');
       return;
     }
     if (_personImages.isEmpty) {
@@ -221,12 +240,44 @@ class _TryonPageState extends State<TryonPage> {
       _result = null;
     });
     try {
+      // ── 私密模式：拉部位图 + 肤色描述，最大程度还原身形 ──
+      final partImgs = <String, Uint8List>{};
+      if (AppColors.privateMode) {
+        final token = PrivateModeService.token;
+        if (token != null && token.isNotEmpty) {
+          for (final k in PrivateBodyStore.partsWithImageKeys) {
+            final path = PrivateBodyStore.partImagePath(k);
+            if (path == null) continue;
+            // 私密图在私有 store 里，直链匿名 403 —— 必须走鉴权代理下载
+            final bytes = await ApiClient.fetchPrivateImage(path, token);
+            if (bytes != null && bytes.isNotEmpty) partImgs[k] = bytes;
+            // 单张部位图拉不到就跳过，不阻断生成
+          }
+        }
+      }
+
+      // prompt 组装：姿势库描述 + 私密风格 + 部位肤色 + 还原指令
+      final prompts = <String>[
+        if (_posePreset != null) _posePreset!.prompt,
+        if (_privateStyle != null) kPrivateStylePrompts[_privateStyle]!,
+        if (AppColors.privateMode) PrivateBodyStore.skinPromptFragment,
+        if (partImgs.isNotEmpty)
+          'use the attached body-part reference images for exact skin tone and body details on each part, reproduce them faithfully for maximum realism',
+      ];
+      final opts = <String, String>{
+        if (_posePreset != null) 'pose': _posePreset!.id,
+        if (_privateStyle != null) 'privateStyle': _privateStyle!,
+        if (partImgs.isNotEmpty) 'partImages': partImgs.keys.join(','),
+      };
       final img = await TryonService().generate(
         c: _config,
         personImages: _personImages,
         garmentImage: _garmentBytes!,
         poseImage: _poseBytes,
         body: _bodyFromForm(),
+        prompt: prompts.isEmpty ? null : prompts.join(', '),
+        options: opts.isEmpty ? null : opts,
+        partImages: partImgs.isEmpty ? null : partImgs,
       );
       if (mounted) setState(() => _result = img);
     } catch (e) {
@@ -265,15 +316,16 @@ class _TryonPageState extends State<TryonPage> {
         scrolledUnderElevation: 0,
         leading: IconButton(
           onPressed: () => Navigator.pop(context),
-          icon: const Icon(Icons.arrow_back_rounded, color: AppColors.textMain),
+          icon: Icon(Icons.arrow_back_rounded, color: AppColors.textMain),
         ),
-        title: const Text('试衣间',
+        title: Text('试衣间',
             style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textMain)),
         centerTitle: true,
       ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 4, 20, 32),
         children: [
+          _modelBanner(),
           _section('人像照（1~$_maxPerson 张）',
               '站姿正面/侧面效果最好；照片只发往你自己的服务'),
           _personSection(),
@@ -282,7 +334,23 @@ class _TryonPageState extends State<TryonPage> {
           _garmentSection(),
           const SizedBox(height: 20),
           _section('姿势参考（可选）', '给模型一张目标姿势图，出图更稳'),
-          _poseSection(),
+          PoseSection(
+            poseBytes: _poseBytes,
+            preset: _posePreset,
+            onPickPoseImage: _pickPose,
+            onClearPreset: () => setState(() => _posePreset = null),
+            onPickFromLibrary: _pickFromLibrary,
+            miniBtn: _miniBtn,
+          ),
+          if (AppColors.privateMode) ...[
+            const SizedBox(height: 20),
+            PrivateStyleSection(
+              selected: _privateStyle,
+              onSelect: (k) => setState(() =>
+                  _privateStyle = _privateStyle == k ? null : k),
+              onClear: () => setState(() => _privateStyle = null),
+            ),
+          ],
           const SizedBox(height: 20),
           _bodySection(),
           const SizedBox(height: 24),
@@ -305,6 +373,63 @@ class _TryonPageState extends State<TryonPage> {
     );
   }
 
+  /// 顶部横幅：让用户一眼看到「现在用的是哪个端点 + 哪个模型 + 哪种协议」，
+  /// 配置填错时这里最能立刻指出问题（以前只能等生成失败才发现）。
+  Widget _modelBanner() {
+    final c = _config;
+    final compat = c.openAiCompat;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 18),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.primarySoft,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(compat ? Icons.cloud_outlined : Icons.lan_rounded,
+              size: 17, color: AppColors.primary),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  c.model.isEmpty
+                      ? (compat ? 'OpenAI 兼容图像接口（未指定模型）' : '自定义试衣端点（未指定模型）')
+                      : '模型 · ${c.model}',
+                  style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.primary),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${c.baseUrl}${compat ? (c.baseUrl.endsWith('/v1') ? '/images/generations' : '/v1/images/generations') : c.path}'
+                  '${c.model.isEmpty ? '· 后端默认出图' : ''}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 10.5, color: AppColors.textSub),
+                ),
+              ],
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              minimumSize: const Size(0, 28),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: Text('改设置',
+                style: TextStyle(fontSize: 11.5, color: AppColors.primary)),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _section(String title, String tip) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(6, 0, 6, 10),
@@ -312,10 +437,10 @@ class _TryonPageState extends State<TryonPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(title,
-              style: const TextStyle(
+              style: TextStyle(
                   fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textMain)),
           const SizedBox(height: 3),
-          Text(tip, style: const TextStyle(fontSize: 11.5, color: AppColors.textHint)),
+          Text(tip, style: TextStyle(fontSize: 11.5, color: AppColors.textHint)),
         ],
       ),
     );
@@ -372,7 +497,7 @@ class _TryonPageState extends State<TryonPage> {
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: AppColors.divider),
                 ),
-                child: const Column(
+                child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Icon(Icons.add_a_photo_rounded, size: 24, color: AppColors.primary),
@@ -407,7 +532,7 @@ class _TryonPageState extends State<TryonPage> {
                 ? ClipRRect(
                     borderRadius: BorderRadius.circular(10),
                     child: Image.memory(_garmentBytes!, fit: BoxFit.cover))
-                : const Icon(Icons.checkroom_rounded, color: AppColors.textHint),
+                : Icon(Icons.checkroom_rounded, color: AppColors.textHint),
           ),
           const SizedBox(width: 14),
           Expanded(
@@ -416,7 +541,7 @@ class _TryonPageState extends State<TryonPage> {
               children: [
                 Text(_garmentLabel,
                     maxLines: 1, overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                         fontSize: 13.5, fontWeight: FontWeight.w600, color: AppColors.textMain)),
                 const SizedBox(height: 10),
                 Row(
@@ -434,38 +559,10 @@ class _TryonPageState extends State<TryonPage> {
     );
   }
 
-  Widget _poseSection() {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppColors.card,
-        borderRadius: BorderRadius.circular(AppColors.radius),
-        boxShadow: AppColors.softShadow,
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 60, height: 80,
-            decoration: BoxDecoration(
-              color: AppColors.primarySoft,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: _poseBytes != null
-                ? ClipRRect(
-                    borderRadius: BorderRadius.circular(10),
-                    child: Image.memory(_poseBytes!, fit: BoxFit.cover))
-                : const Icon(Icons.accessibility_new_rounded, color: AppColors.textHint),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Text(_poseBytes == null ? '未选择' : '已选（点击右侧可更换）',
-                style: const TextStyle(fontSize: 13, color: AppColors.textSub)),
-          ),
-          _miniBtn(_poseBytes == null ? '选姿势图' : '换一张',
-              Icons.accessibility_new_rounded, _pickPose),
-        ],
-      ),
-    );
+  Future<void> _pickFromLibrary() async {
+    final picked = await PoseLibrarySheet.pick(context, currentId: _posePreset?.id);
+    if (picked == null || !mounted) return;
+    setState(() => _posePreset = picked);
   }
 
   Widget _bodySection() {
@@ -480,9 +577,9 @@ class _TryonPageState extends State<TryonPage> {
         child: ExpansionTile(
           tilePadding: const EdgeInsets.symmetric(horizontal: 14),
           childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
-          title: const Text('身体数据（可选）',
+          title: Text('身体数据（可选）',
               style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600, color: AppColors.textMain)),
-          subtitle: const Text('身高体重三围，填了出图更贴身；不填也行',
+          subtitle: Text('身高体重三围，填了出图更贴身；不填也行',
               style: TextStyle(fontSize: 11.5, color: AppColors.textHint)),
           iconColor: AppColors.primary,
           collapsedIconColor: AppColors.textSub,
@@ -510,13 +607,13 @@ class _TryonPageState extends State<TryonPage> {
     return TextField(
       controller: ctrl,
       keyboardType: TextInputType.number,
-      style: const TextStyle(fontSize: 13.5, color: AppColors.textMain),
+      style: TextStyle(fontSize: 13.5, color: AppColors.textMain),
       decoration: InputDecoration(
         isDense: true,
         labelText: label,
         hintText: hint,
-        hintStyle: const TextStyle(fontSize: 12, color: AppColors.textHint),
-        labelStyle: const TextStyle(fontSize: 11.5, color: AppColors.textSub),
+        hintStyle: TextStyle(fontSize: 12, color: AppColors.textHint),
+        labelStyle: TextStyle(fontSize: 11.5, color: AppColors.textSub),
         filled: true,
         fillColor: AppColors.bg,
         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
@@ -541,7 +638,7 @@ class _TryonPageState extends State<TryonPage> {
             Icon(icon, size: 14, color: AppColors.primary),
             const SizedBox(width: 5),
             Text(label,
-                style: const TextStyle(fontSize: 12, color: AppColors.primary,
+                style: TextStyle(fontSize: 12, color: AppColors.primary,
                     fontWeight: FontWeight.w600)),
           ]),
         ),
@@ -578,7 +675,7 @@ class _TryonPageState extends State<TryonPage> {
         borderRadius: BorderRadius.circular(AppColors.radius),
         boxShadow: AppColors.softShadow,
       ),
-      child: const Row(
+      child: Row(
         children: [
           SizedBox(
             width: 22, height: 22,
@@ -627,7 +724,7 @@ class _TryonPageState extends State<TryonPage> {
                 onPressed: _shareResult,
                 style: OutlinedButton.styleFrom(
                   foregroundColor: AppColors.primary,
-                  side: const BorderSide(color: AppColors.primary),
+                  side: BorderSide(color: AppColors.primary),
                   padding: const EdgeInsets.symmetric(vertical: 12),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
                 ),

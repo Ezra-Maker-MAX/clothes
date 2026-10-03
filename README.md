@@ -104,9 +104,113 @@ PORT=3001 LOCAL_DB=./local.db npm run local
 | `LLM_BASE_URL` | LLM 接口地址（如 `https://apihub.agnes-ai.com/v1`） | 建议 |
 | `LLM_MODEL` | LLM 模型名（如 `agnes-2.5-flash`） | 建议 |
 | `WEATHER_API_KEY` | 和风天气 KEY（缺省自动用 mock 天气，不影响主流程） | 可选 |
-| `BLOB_READ_WRITE_TOKEN` | 图片上传（Vercel 面板连接 Blob 后自动注入） | 可选 |
+| `BLOB_READ_WRITE_TOKEN` | **公开**图库：衣橱单品图（Vercel 面板连接 Blob 后自动注入） | 可选 |
+| `PRIVATE_MODE_PASSWORD` | 私密模式门禁密码（建议 16 位以上随机串） | 私密模式必填 |
+| `PRIVATE_BLOB_STORE_ID` | 🔒 **私密**图库：身体部位图/私密相册（access=Private 的独立 store） | 私密上传必填 |
+| `PRIVATE_BLOB_READ_WRITE_TOKEN` | 仅当不用 OIDC 时才需要（连上项目后 Vercel 自动注入） | 可选 |
+| `PRIVATE_USER_ID` | 私密数据 owner id（与衣橱侧 `u_demo_0001` 一致） | 可选 |
 
 > LLM 三项缺省时自动回退规则文案，`WEATHER_API_KEY` 缺省时用 mock 天气 —— 都不会让接口报错。
+
+### 🔒 私密图为什么需要「两个」Blob store
+
+Vercel Blob 的 `access` 是 **store 级**属性：同一个 store 里没法一半 public 一半 private。
+所以隐私相关的图（身体部位图、私密相册）必须单建一个 **access=Private** 的 store：
+
+1. Vercel → 项目 → **Storage** → Create Storage → **Blob**
+2. access 选 **Private**
+3. **Advanced Options** → Environment Variable prefix 填 `PRIVATE_BLOB_`
+4. Continue（自动 Connect to Project，无需手写任何token）→ **Redeploy**
+
+私密图的访问链路：
+`App` → `GET /api/private-image?pathname=private/xxx.jpg` + `Authorization: Bearer <token>`
+→ 服务端验令牌 → 用服务端凭据 `get(blob, access:'private')` 取流 → 回给App。
+
+> ⚠️ **私密 store 未配置时，私密图上传直接返回 503 拒绝**，不会静默落到公开 store ——
+> 回退等于私密照片以公开 URL 落盘，这次改造就白做了。
+> 数据库里存的是 blob 的 **pathname**，不是 URL；private-profile 的 photos 字段同理。
+
+## 打包 App
+
+```bash
+cd app
+# Web（前端静态产物）
+flutter build web --release --dart-define=USE_MOCK=false --dart-define=API_BASE_URL=https://<项目名>.vercel.app
+# Android release（需先配好签名，见下）
+flutter build apk --release
+```
+
+> ⚠️ `USE_MOCK` 现在**默认为 false**（真实模式）。想跑演示数据要显式
+> `--dart-define=USE_MOCK=true`。原因：默认值 true 时，忘记加参数会得到一个
+> 「看起来正常但所有写入只落本地、永不联库」的 App，且没有任何报错提示 ——
+> 对涉及身体数据的私密功能尤其危险。
+
+### 🔐 Android release 签名（不做就用不了 release 包）
+
+release 构建**不再退回 debug 签名**：缺配置会直接中断构建并提示。
+这是刻意为之——早前那句「Signing with the debug keys for now」让问题彻底隐形
+（构建照过、装到手机上也没人发现，直到某天商店拒审或包被顶替）。
+
+### 方式 A：本地出包
+
+1. 生成 keystore（PKCS12 格式，**别提交进 git**）：
+   ```bash
+   cd app/android
+   keytool -genkeypair -v -keystore yinian-release.p12 -storetype PKCS12 \
+     -keyalg RSA -keysize 2048 -validity 10000 -alias yinian
+   ```
+2. 照着 `app/android/key.properties.example` 填好四项，存为 `app/android/key.properties`（同样不入库）
+3. 正常 `flutter build apk --release`
+
+### 方式 B：GitHub Actions 出包（推荐，无需本地装Android SDK）
+
+工作流 `.github/workflows/android-build.yml` 已配好，会自动还原签名材料、
+跑 analyze + 测试、校验产物不是 debug 签名，最后发到 Releases。
+
+**一次性配置**（仓库 Settings → Secrets and variables → Actions → New repository secret）：
+
+| Secret 名 | 值 |
+|---|---|
+| `ANDROID_KEYSTORE_BASE64` | keystore 的 base64（见下方命令） |
+| `ANDROID_KEYSTORE_PASSWORD` | `storePassword` |
+| `ANDROID_KEY_ALIAS` | `yinian` |
+| `ANDROID_KEY_PASSWORD` | `keyPassword` |
+| `API_BASE_URL` | `https://<项目名>.vercel.app` |
+
+生成 base64（**注意 macOS/Linux 差异**，Linux 的 `-w0` 在 macOS 不可用）：
+
+```bash
+# Linux
+base64 -w0 app/android/yinian-release.p12
+# macOS
+base64 -i app/android/yinian-release.p12 | tr -d '\n'
+```
+
+配好后有两个触发方式：
+- **手动**：仓库页 Actions → Build Android APK → Run workflow
+- **打 tag 自动触发并发布**：
+  ```bash
+  git tag v1.0.0 && git push origin v1.0.0
+  ```
+  产物自动进 Releases（含版本号的安装包），永久保留
+
+>私钥只存在于 GitHub 加密存储与 runner 临时目录，任务结束即销毁，不入库。
+> 缺任何签名 Secret 时构建会**明确失败**——这是刻意的，绝不产出 debug 签名的包。
+
+> `*.p12` / `*.jks` / `key.properties` 都已在 `.gitignore` 里。
+> **丢了 keystore 就没法再更新已发布的 App** —— 请单独备份到安全的地方。
+> 存在 GitHub Secrets 里的是一份副本，本地这份丢了可以从 Secret 还原。
+
+## 测试
+
+```bash
+npm test                # 服务端 24 项：token 鉴权 / 密码限速锁定 / 私密图路径白名单
+cd app && flutter test  # 客户端 27 项：AI 结果解析 / 25 姿势完整性 / 肤色 prompt
+```
+
+两组测试都覆盖「改坏了不会立刻暴露」的关键逻辑：鉴权、暴力破解防护、
+路径穿越防护、模型输出容错、姿势库完整性。改这几处前先跑一遍。
+
 
 ## 部署到 Vercel（推荐流程）
 
@@ -119,6 +223,21 @@ PORT=3001 LOCAL_DB=./local.db npm run local
 > 数据库尚未建表时，本地执行 `node scripts/init-remote.mjs`（读 `.env`，幂等可重复跑）。
 
 > 前端静态托管：Flutter Web 构建产物已入库 `public/`（Vercel Other 项目约定静态目录，与 `/api` 同域名自动共存，前端请求零 CORS）。更新前端：本地执行 `flutter build web --release --dart-define=USE_MOCK=false --dart-define=API_BASE_URL=https://<项目名>.vercel.app`，然后把 `app/build/web/*` 覆盖到 `public/` 提交推送即可。
+
+## 私密模式（🍑 隐蔽入口）
+
+入口**不在UI 上显式出现**：它在「设置」页最底部的隐私说明文字末尾，是一枚
+普通的 🍑 表情。**2 秒内连点 5 次**才触发，过程中零反馈。
+
+- 密码只存在环境变量 `PRIVATE_MODE_PASSWORD`，客户端安装包与本地存储均无密码
+- 校验通过 → 服务端下发 HMAC token（默认 7 天）→ 围度/肤色/部位图接口凭 token 读写
+- 本地只记「解锁时间戳」，24 小时内重启 App 免重复输入；不记密码
+- 连续输错 5 次按 IP 锁定 15 分钟
+- 「退出私密模式」立即切回日常主题并清空时间戳与 token
+
+> 改密码（换环境变量值）= 所有旧 token **立刻全部失效**。
+> 客户端解锁记忆 24h 与服务端 token 7 天是两套独立时限，当前实现不会错配；
+> 但若将来加「自动续期」，务必先统一这两个时长。
 
 ## 路线图
 
@@ -135,5 +254,5 @@ flutter run -d chrome            # 本地开发
 flutter build web --release      # Web 端构建 → build/web（Vercel 部署静态产物）
 ```
 
-- `USE_MOCK` 由构建参数控制：默认 true（本地模拟数据）；联调/上线加 `--dart-define=USE_MOCK=false` 走真实接口
+- `USE_MOCK` 由构建参数控制：**默认 false（真实模式）**；想跑演示数据显式加 `--dart-define=USE_MOCK=true`
 - 真实模式下天气卡、排重（避开昨日穿过）、"换一套"轮换、"就穿这套"落库全部走 `/api`

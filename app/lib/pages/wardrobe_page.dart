@@ -149,7 +149,7 @@ class _WardrobePageState extends State<WardrobePage> {
             _categoryTabs(),
             Expanded(
               child: _loading
-                  ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
+                  ? Center(child: CircularProgressIndicator(color: AppColors.primary))
                   : _listView
                       ? _list()
                       : _grid(),
@@ -215,7 +215,7 @@ class _WardrobePageState extends State<WardrobePage> {
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(18),
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
@@ -293,18 +293,18 @@ class _WardrobePageState extends State<WardrobePage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('我的衣橱',
+                Text('我的衣橱',
                     style: TextStyle(
                         fontSize: 24, fontWeight: FontWeight.bold, color: AppColors.textMain)),
                 const SizedBox(height: 4),
                 Text(statText,
-                    style: const TextStyle(fontSize: 12.5, color: AppColors.textSub)),
+                    style: TextStyle(fontSize: 12.5, color: AppColors.textSub)),
                 if (_errorDetail != null) ...[
                   const SizedBox(height: 2),
                   Text('数据加载失败，以下为演示数据：$_errorDetail',
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 10.5, color: AppColors.textHint)),
+                      style: TextStyle(fontSize: 10.5, color: AppColors.textHint)),
                 ],
               ],
             ),
@@ -323,7 +323,7 @@ class _WardrobePageState extends State<WardrobePage> {
           ),
           PopupMenuButton<String>(
             tooltip: '视图与排序',
-            icon: const Icon(Icons.tune_rounded, color: AppColors.textMain),
+            icon: Icon(Icons.tune_rounded, color: AppColors.textMain),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
             onSelected: (v) {
               if (v == 'manageCats') {
@@ -364,7 +364,7 @@ class _WardrobePageState extends State<WardrobePage> {
           ),
           IconButton(
             onPressed: _openAddSheet,
-            icon: const Icon(Icons.add_rounded, color: AppColors.textMain),
+            icon: Icon(Icons.add_rounded, color: AppColors.textMain),
           ),
         ],
       ),
@@ -379,11 +379,11 @@ class _WardrobePageState extends State<WardrobePage> {
         controller: _searchCtrl,
         autofocus: true,
         onChanged: (v) => setState(() => _query = v.trim()),
-        style: const TextStyle(fontSize: 14, color: AppColors.textMain),
+        style: TextStyle(fontSize: 14, color: AppColors.textMain),
         decoration: InputDecoration(
           hintText: '搜名称 / 品牌 / 颜色',
-          hintStyle: const TextStyle(fontSize: 13, color: AppColors.textHint),
-          prefixIcon: const Icon(Icons.search_rounded, size: 20, color: AppColors.textHint),
+          hintStyle: TextStyle(fontSize: 13, color: AppColors.textHint),
+          prefixIcon: Icon(Icons.search_rounded, size: 20, color: AppColors.textHint),
           isDense: true,
           filled: true,
           fillColor: AppColors.card,
@@ -476,18 +476,18 @@ class _WardrobePageState extends State<WardrobePage> {
                       child: Text(item.name,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.textMain)),
+                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.textMain)),
                     ),
                     Text('${item.categoryLabel} · ${item.colorName ?? ''}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 10, color: AppColors.textSub)),
+                        style: TextStyle(fontSize: 10, color: AppColors.textSub)),
                     const SizedBox(height: 8),
                   ],
                 ),
               ),
               if (item.pinned)
-                const Positioned(
+                Positioned(
                   left: 6, top: 6,
                   child: Icon(Icons.push_pin_rounded, size: 14, color: AppColors.accent),
                 ),
@@ -548,14 +548,14 @@ class _WardrobePageState extends State<WardrobePage> {
                       Row(
                         children: [
                           if (item.pinned) ...[
-                            const Icon(Icons.push_pin_rounded, size: 12, color: AppColors.accent),
+                            Icon(Icons.push_pin_rounded, size: 12, color: AppColors.accent),
                             const SizedBox(width: 4),
                           ],
                           Expanded(
                             child: Text(item.name,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
+                                style: TextStyle(
                                     fontSize: 13.5, fontWeight: FontWeight.w600, color: AppColors.textMain)),
                           ),
                         ],
@@ -565,12 +565,12 @@ class _WardrobePageState extends State<WardrobePage> {
                         '${item.categoryLabel}${item.colorName == null ? '' : ' · ${item.colorName}'}${item.brand == null ? '' : ' · ${item.brand}'}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 11, color: AppColors.textSub),
+                        style: TextStyle(fontSize: 11, color: AppColors.textSub),
                       ),
                       if (item.price != null) ...[
                         const SizedBox(height: 2),
                         Text('¥${_priceText(item.price!)} · 单次 ${item.costPerWear}',
-                            style: const TextStyle(fontSize: 10.5, color: AppColors.accent)),
+                            style: TextStyle(fontSize: 10.5, color: AppColors.accent)),
                       ],
                     ],
                   ),
@@ -605,7 +605,7 @@ class _WardrobePageState extends State<WardrobePage> {
           const Text('🔍', style: TextStyle(fontSize: 40)),
           const SizedBox(height: 8),
           Text(_query.isEmpty ? '这个分类还没有单品，点右下角加一件' : '没找到「$_query」相关的单品',
-              style: const TextStyle(fontSize: 13, color: AppColors.textSub)),
+              style: TextStyle(fontSize: 13, color: AppColors.textSub)),
         ],
       ),
     );
@@ -624,7 +624,7 @@ class _WardrobePageState extends State<WardrobePage> {
           borderRadius: BorderRadius.circular(14),
           color: Colors.transparent,
         ),
-        child: const Center(
+        child: Center(
           child: Icon(Icons.add_rounded, size: 30, color: AppColors.textHint),
         ),
       ),
@@ -663,6 +663,8 @@ class _WardrobePageState extends State<WardrobePage> {
   }
 
   /// 打开「添加单品」表单；保存成功后刷新列表 + toast
+  /// onSplitDone：「一整身照片自动拆分」入橱完成时的回调——
+  /// 那条流程自己会 pop 掉本弹层，拿不到 showModalBottomSheet 的返回值，只能靠回调通知。
   Future<void> _openAddSheet() async {
     final saved = await showModalBottomSheet<bool>(
       context: context,
@@ -670,7 +672,10 @@ class _WardrobePageState extends State<WardrobePage> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (_) => const ItemFormSheet(),
+      builder: (_) => ItemFormSheet(onSplitDone: () {
+        _toast('一整身拆好入橱了，去看看对不对');
+        _load();
+      }),
     );
     if (saved == true) {
       _toast('已挂进衣橱，下次搭配就能翻它的牌');
@@ -715,7 +720,7 @@ class _MenuRow extends StatelessWidget {
       children: [
         Icon(icon, size: 18, color: AppColors.textSub),
         const SizedBox(width: 10),
-        Text(label, style: const TextStyle(fontSize: 13.5, color: AppColors.textMain)),
+        Text(label, style: TextStyle(fontSize: 13.5, color: AppColors.textMain)),
       ],
     );
   }

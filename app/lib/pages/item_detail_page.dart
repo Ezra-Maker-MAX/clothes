@@ -97,14 +97,14 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.card,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        title: const Text('删掉这件？',
+        title: Text('删掉这件？',
             style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: AppColors.textMain)),
         content: Text('「${_item.name}」会从衣橱收走，穿过的历史记录不受影响。',
-            style: const TextStyle(fontSize: 13.5, color: AppColors.textSub)),
+            style: TextStyle(fontSize: 13.5, color: AppColors.textSub)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('再想想', style: TextStyle(color: AppColors.textSub)),
+            child: Text('再想想', style: TextStyle(color: AppColors.textSub)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
@@ -134,9 +134,9 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
         scrolledUnderElevation: 0,
         leading: IconButton(
           onPressed: () => Navigator.pop(context),
-          icon: const Icon(Icons.arrow_back_rounded, color: AppColors.textMain),
+          icon: Icon(Icons.arrow_back_rounded, color: AppColors.textMain),
         ),
-        title: const Text('单品详情',
+        title: Text('单品详情',
             style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textMain)),
         centerTitle: true,
         actions: [
@@ -157,7 +157,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                     builder: (_) => TryonPage(presetGarment: _item)),
               ),
               tooltip: '去试穿',
-              icon: const Icon(Icons.checkroom_rounded, color: AppColors.primary),
+              icon: Icon(Icons.checkroom_rounded, color: AppColors.primary),
             ),
         ],
       ),
@@ -222,7 +222,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                   child: InkWell(
                     customBorder: const CircleBorder(),
                     onTap: _edit,
-                    child: const Padding(
+                    child: Padding(
                       padding: EdgeInsets.all(9),
                       child: Icon(Icons.image_rounded, size: 20, color: AppColors.textSub),
                     ),
@@ -234,7 +234,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
           const SizedBox(height: 8),
           Center(
             child: Text(_item.name,
-                style: const TextStyle(
+                style: TextStyle(
                     fontSize: 17, fontWeight: FontWeight.bold, color: AppColors.textMain)),
           ),
           const SizedBox(height: 18),
@@ -253,16 +253,16 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
           // ---- 搭配记录 ----
           Row(
             children: [
-              const Text('穿过它的时候',
+              Text('穿过它的时候',
                   style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textMain)),
               const Spacer(),
               Text('${_item.wearCount} 次上身',
-                  style: const TextStyle(fontSize: 11.5, color: AppColors.textSub)),
+                  style: TextStyle(fontSize: 11.5, color: AppColors.textSub)),
             ],
           ),
           const SizedBox(height: 10),
           if (_loadingHistory)
-            const Padding(
+            Padding(
               padding: EdgeInsets.all(20),
               child: Center(child: CircularProgressIndicator(color: AppColors.primary, strokeWidth: 2)),
             )
@@ -274,7 +274,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                 borderRadius: BorderRadius.circular(AppColors.radius),
                 boxShadow: AppColors.softShadow,
               ),
-              child: const Center(
+              child: Center(
                 child: Text('还没有记录。回首页「换一套」，让它出场。',
                     style: TextStyle(fontSize: 12.5, color: AppColors.textSub)),
               ),
@@ -292,7 +292,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                   onPressed: _edit,
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppColors.textMain,
-                    side: const BorderSide(color: AppColors.divider),
+                    side: BorderSide(color: AppColors.divider),
                     padding: const EdgeInsets.symmetric(vertical: 13),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
                   ),
@@ -334,10 +334,10 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
         ),
         child: Row(
           children: [
-            Text(label, style: const TextStyle(fontSize: 13.5, color: AppColors.textSub)),
+            Text(label, style: TextStyle(fontSize: 13.5, color: AppColors.textSub)),
             const Spacer(),
             Text(value,
-                style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: AppColors.textMain)),
+                style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: AppColors.textMain)),
           ],
         ),
       ),
@@ -361,10 +361,10 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
             child: Text(e.summary,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 12.5, color: AppColors.textSub)),
+                style: TextStyle(fontSize: 12.5, color: AppColors.textSub)),
           ),
           const SizedBox(width: 8),
-          Text(e.date, style: const TextStyle(fontSize: 11.5, color: AppColors.textHint)),
+          Text(e.date, style: TextStyle(fontSize: 11.5, color: AppColors.textHint)),
         ],
       ),
     );

@@ -15,6 +15,9 @@ dependencies:
   image: ^4.3.0           # 纯 Dart 兜底压缩：PNG/HEIC/超大图强制压到安全线（Web 端关键）
   shared_preferences: ^2.5.5
   share_plus: ^13.3.1
+# 注：path_provider 已移除 —— 最初为「私密照片存本机沙箱」准备，
+# 但方案后来改成全量上云（Vercel 私有 Blob + Turso），本地不再需要文件目录访问，
+# 零引用依赖留着只会让 pub get 白拉一个包、误导后来人以为有本地存储逻辑。
 
 dev_dependencies:
   flutter_test:

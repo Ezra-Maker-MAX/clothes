@@ -1,18 +1,27 @@
 // 单品表单底部弹层 —— 添加 / 编辑 双模式（参考竞品编辑弹窗，莫兰迪紫风格）
 // 名称 + 动态分类 chips + 颜色 + 品牌 + 价格 + 图片（可选，/api/upload 落 Blob）
+//
+// 「一整身照片」入口：加图区最右那张橙色卡片，点它会让多模态模型把全身照拆成
+// 单件，逐件确认后批量入橱（见 outfit_split_page.dart）。
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
 import '../models/models.dart';
+import '../pages/outfit_split_page.dart';
 import '../services/api_client.dart';
 import '../services/image_service.dart';
 import '../theme/app_colors.dart';
 
 class ItemFormSheet extends StatefulWidget {
-  const ItemFormSheet({super.key, this.item});
+  const ItemFormSheet({super.key, this.item, this.onSplitDone});
 
   final ItemInfo? item; // null = 添加模式
+
+  /// 「一整身拆分」成功入橱后的回调（用于让衣橱页刷新列表）。
+  /// 必须是回调而非返回值：拆分流程第一步就会 pop 掉本弹层。
+  final VoidCallback? onSplitDone;
 
   @override
   State<ItemFormSheet> createState() => _ItemFormSheetState();
@@ -26,6 +35,7 @@ class _ItemFormSheetState extends State<ItemFormSheet> {
   late String _catId;
   bool _saving = false;
   bool _uploading = false;
+  bool _outfitMode = false; // 刚挑了「一整身」拆分原图
   List<String> _imageUrls = []; // 已上传的图片 URL 列表（第一张即主图）
   Uint8List? _previewBytes; // 本次上传中的本地预览
 
@@ -115,6 +125,42 @@ class _ItemFormSheetState extends State<ItemFormSheet> {
     }
   }
 
+  /// 「一整身？自动拆开」：选图后交给多模态模型拆分，进入逐件确认页。
+  /// 这条路不把原图传 Blob —— 它只是拆分依据，拆完各单品才各自上传。
+  ///
+  /// 注意本弹层在流程开始时就被 pop 了（避免两层 bottom sheet 叠加），
+  /// 所以 [onSplitDone] 必须是外部注入的回调，弹层自己没法再上报结果。
+  Future<void> _pickOutfitPhoto() async {
+    setState(() => _uploading = true);
+    PickedImage? picked;
+    try {
+      picked = await pickImage(label: '全身照', maxWidth: 1400, quality: 88);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _uploading = false);
+        _snack(e.toString().replaceFirst(RegExp(r'^Bad state:\s*'), ''));
+      }
+      return;
+    }
+    if (picked == null) {
+      if (mounted) setState(() => _uploading = false);
+      return;
+    }
+    if (!mounted) return; // 跨过 pickImage 的 async gap，context 可能已失效
+    setState(() {
+      _outfitMode = true;
+      _previewBytes = picked!.bytes;
+    });
+    // 不再 await 本弹层状态：它马上就被关闭了
+    unawaited(OutfitSplitFlow.start(
+      context,
+      image: picked.bytes,
+      filename: picked.filename,
+      contentType: picked.contentType,
+      onDone: widget.onSplitDone,
+    ));
+  }
+
   Future<void> _save() async {
     final name = _nameCtrl.text.trim();
     if (name.isEmpty) {
@@ -188,12 +234,12 @@ class _ItemFormSheetState extends State<ItemFormSheet> {
             Row(
               children: [
                 Text(_isEdit ? '编辑单品' : '添加单品',
-                    style: const TextStyle(
+                    style: TextStyle(
                         fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textMain)),
                 const Spacer(),
                 IconButton(
                   onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.close_rounded, color: AppColors.textSub),
+                  icon: Icon(Icons.close_rounded, color: AppColors.textSub),
                 ),
               ],
             ),
@@ -207,12 +253,12 @@ class _ItemFormSheetState extends State<ItemFormSheet> {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const SizedBox(
+                          SizedBox(
                               width: 22, height: 22,
                               child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary)),
                           const SizedBox(height: 8),
                           Text('正在上传（含 AI 抠图，稍等）…',
-                              style: const TextStyle(fontSize: 11.5, color: AppColors.textHint)),
+                              style: TextStyle(fontSize: 11.5, color: AppColors.textHint)),
                         ],
                       ),
                     )
@@ -233,7 +279,7 @@ class _ItemFormSheetState extends State<ItemFormSheet> {
                                             color: AppColors.bg,
                                             alignment: Alignment.center,
                                             child: Text(i == 0 ? '主图' : '${i + 1}',
-                                                style: const TextStyle(
+                                                style: TextStyle(
                                                     fontSize: 11.5, color: AppColors.textHint)))),
                                   ),
                                 ),
@@ -281,28 +327,83 @@ class _ItemFormSheetState extends State<ItemFormSheet> {
                               child: Column(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
-                                  const Icon(Icons.add_a_photo_rounded, size: 22, color: AppColors.primary),
+                                  Icon(Icons.add_a_photo_rounded, size: 22, color: AppColors.primary),
                                   const SizedBox(height: 6),
                                   Text('加图 ${_imageUrls.length}/$_maxImages',
-                                      style: const TextStyle(fontSize: 10.5, color: AppColors.textHint)),
+                                      style: TextStyle(fontSize: 10.5, color: AppColors.textHint)),
                                 ],
                               ),
                             ),
                           ),
+                        // 「一整身照片」入口：让多模态模型先拆成单件，用户再逐件校对
+                        _isEdit
+                            ? const SizedBox.shrink()
+                            : GestureDetector(
+                                onTap: _uploading ? null : _pickOutfitPhoto,
+                                child: Container(
+                                  width: 96, height: 120,
+                                  decoration: BoxDecoration(
+                                    color: AppColors.accentSoft,
+                                    borderRadius: BorderRadius.circular(14),
+                                    border: Border.all(
+                                        color: AppColors.accent.withValues(alpha: 0.45)),
+                                  ),
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(Icons.auto_awesome_rounded,
+                                          size: 22, color: AppColors.accent),
+                                      const SizedBox(height: 6),
+                                      Text('一整身？',
+                                          style: TextStyle(
+                                              fontSize: 10.5,
+                                              color: AppColors.accent,
+                                              fontWeight: FontWeight.w600)),
+                                      Text('自动拆开',
+                                          style: TextStyle(
+                                              fontSize: 10.5, color: AppColors.accent)),
+                                    ],
+                                  ),
+                                ),
+                              ),
                       ],
                     ),
             ),
             const SizedBox(height: 12),
 
+            // 「一整身」提示条：只在挑了这张图之后出现
+            if (_outfitMode) ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: AppColors.accentSoft,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info_rounded, size: 15, color: AppColors.accent),
+                    SizedBox(width: 7),
+                    Expanded(
+                      child: Text('这是拆分原图，不会作为单品保存。'
+                          '拆完会开一个确认页，逐件改名分类后批量入橱。',
+                          style: TextStyle(
+                              fontSize: 11, color: AppColors.accent, height: 1.45)),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 10),
+            ],
+
             TextField(
               controller: _nameCtrl,
               autofocus: !_isEdit,
               textInputAction: TextInputAction.next,
-              style: const TextStyle(fontSize: 15, color: AppColors.textMain),
+              style: TextStyle(fontSize: 15, color: AppColors.textMain),
               decoration: _inputDeco('单品名称，如「云朵白衬衫」'),
             ),
             const SizedBox(height: 14),
-            const Text('分类',
+            Text('分类',
                 style: TextStyle(fontSize: 12.5, color: AppColors.textSub)),
             const SizedBox(height: 8),
             Wrap(
@@ -336,7 +437,7 @@ class _ItemFormSheetState extends State<ItemFormSheet> {
                   child: TextField(
                     controller: _colorCtrl,
                     textInputAction: TextInputAction.next,
-                    style: const TextStyle(fontSize: 15, color: AppColors.textMain),
+                    style: TextStyle(fontSize: 15, color: AppColors.textMain),
                     decoration: _inputDeco('颜色（可选）'),
                   ),
                 ),
@@ -345,7 +446,7 @@ class _ItemFormSheetState extends State<ItemFormSheet> {
                   child: TextField(
                     controller: _brandCtrl,
                     textInputAction: TextInputAction.next,
-                    style: const TextStyle(fontSize: 15, color: AppColors.textMain),
+                    style: TextStyle(fontSize: 15, color: AppColors.textMain),
                     decoration: _inputDeco('品牌（可选）'),
                   ),
                 ),
@@ -357,10 +458,10 @@ class _ItemFormSheetState extends State<ItemFormSheet> {
               keyboardType:
                   const TextInputType.numberWithOptions(decimal: true),
               textInputAction: TextInputAction.done,
-              style: const TextStyle(fontSize: 15, color: AppColors.textMain),
+              style: TextStyle(fontSize: 15, color: AppColors.textMain),
               decoration: _inputDeco('价格（可选），如 299').copyWith(
                 prefixText: '¥ ',
-                prefixStyle: const TextStyle(fontSize: 15, color: AppColors.textMain),
+                prefixStyle: TextStyle(fontSize: 15, color: AppColors.textMain),
               ),
             ),
             const SizedBox(height: 20),
@@ -386,7 +487,7 @@ class _ItemFormSheetState extends State<ItemFormSheet> {
               ),
             ),
             const SizedBox(height: 8),
-            const Center(
+            Center(
               child: Text('多图第一张即主图；配置 AI 抠图后自动去背。图片存到云存储，换设备也在',
                   style: TextStyle(fontSize: 11, color: AppColors.textHint)),
             ),
@@ -398,7 +499,7 @@ class _ItemFormSheetState extends State<ItemFormSheet> {
 
   InputDecoration _inputDeco(String hint) => InputDecoration(
         hintText: hint,
-        hintStyle: const TextStyle(fontSize: 13.5, color: AppColors.textHint),
+        hintStyle: TextStyle(fontSize: 13.5, color: AppColors.textHint),
         filled: true,
         fillColor: AppColors.bg,
         contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),

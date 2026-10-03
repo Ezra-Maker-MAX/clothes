@@ -55,13 +55,13 @@ class _CategoryManageSheetState extends State<CategoryManageSheet> {
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.card,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        title: const Text('重命名分类',
+        title: Text('重命名分类',
             style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textMain)),
         content: TextField(
           controller: ctrl,
           autofocus: true,
           maxLength: 12,
-          style: const TextStyle(fontSize: 15, color: AppColors.textMain),
+          style: TextStyle(fontSize: 15, color: AppColors.textMain),
           decoration: InputDecoration(
             hintText: '分类名称',
             counterText: '',
@@ -71,10 +71,10 @@ class _CategoryManageSheetState extends State<CategoryManageSheet> {
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消', style: TextStyle(color: AppColors.textSub))),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text('取消', style: TextStyle(color: AppColors.textSub))),
           TextButton(
             onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-            child: const Text('保存', style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold)),
+            child: Text('保存', style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -102,12 +102,12 @@ class _CategoryManageSheetState extends State<CategoryManageSheet> {
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.card,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        title: const Text('删掉这个分类？',
+        title: Text('删掉这个分类？',
             style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textMain)),
         content: Text('「${c.name}」将从分类列表移除。${c.isBuiltin ? '内置分类不可删除。' : '分类下的单品不受影响，但需要先移走才能删。'}',
-            style: const TextStyle(fontSize: 13.5, color: AppColors.textSub)),
+            style: TextStyle(fontSize: 13.5, color: AppColors.textSub)),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('算了', style: TextStyle(color: AppColors.textSub))),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text('算了', style: TextStyle(color: AppColors.textSub))),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('删除', style: TextStyle(color: Color(0xFFB4654A), fontWeight: FontWeight.bold)),
@@ -155,18 +155,18 @@ class _CategoryManageSheetState extends State<CategoryManageSheet> {
           children: [
             Row(
               children: [
-                const Text('管理分类',
+                Text('管理分类',
                     style: TextStyle(
                         fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textMain)),
                 const Spacer(),
                 IconButton(
                   onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.close_rounded, color: AppColors.textSub),
+                  icon: Icon(Icons.close_rounded, color: AppColors.textSub),
                 ),
               ],
             ),
             Text('长按拖动调整排序；新建分类会映射到推荐引擎的适配类别，不影响搭配推荐。',
-                style: const TextStyle(fontSize: 11.5, color: AppColors.textHint)),
+                style: TextStyle(fontSize: 11.5, color: AppColors.textHint)),
             const SizedBox(height: 8),
             Flexible(
               child: ReorderableListView.builder(
@@ -194,20 +194,20 @@ class _CategoryManageSheetState extends State<CategoryManageSheet> {
                       children: [
                         ReorderableDragStartListener(
                           index: i,
-                          child: const Icon(Icons.drag_indicator_rounded, size: 20, color: AppColors.textHint),
+                          child: Icon(Icons.drag_indicator_rounded, size: 20, color: AppColors.textHint),
                         ),
                         const SizedBox(width: 6),
                         Text(c.emoji, style: const TextStyle(fontSize: 15)),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(c.name,
-                              style: const TextStyle(
+                              style: TextStyle(
                                   fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textMain)),
                         ),
                         IconButton(
                           visualDensity: VisualDensity.compact,
                           onPressed: () => _rename(c),
-                          icon: const Icon(Icons.edit_outlined, size: 18, color: AppColors.textSub),
+                          icon: Icon(Icons.edit_outlined, size: 18, color: AppColors.textSub),
                         ),
                         if (!c.isBuiltin)
                           IconButton(
@@ -239,7 +239,7 @@ class _CategoryManageSheetState extends State<CategoryManageSheet> {
                       controller: _newNameCtrl,
                       autofocus: true,
                       maxLength: 12,
-                      style: const TextStyle(fontSize: 14.5, color: AppColors.textMain),
+                      style: TextStyle(fontSize: 14.5, color: AppColors.textMain),
                       decoration: InputDecoration(
                         hintText: '新分类名称，如「吊带打底」',
                         counterText: '',
@@ -248,7 +248,7 @@ class _CategoryManageSheetState extends State<CategoryManageSheet> {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    const Text('搭配推荐时按哪个类别算适配度？',
+                    Text('搭配推荐时按哪个类别算适配度？',
                         style: TextStyle(fontSize: 11.5, color: AppColors.textSub)),
                     const SizedBox(height: 6),
                     Wrap(
@@ -284,7 +284,7 @@ class _CategoryManageSheetState extends State<CategoryManageSheet> {
                             onPressed: () => setState(() => _adding = false),
                             style: OutlinedButton.styleFrom(
                               foregroundColor: AppColors.textSub,
-                              side: const BorderSide(color: AppColors.divider),
+                              side: BorderSide(color: AppColors.divider),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                             ),
                             child: const Text('取消'),
@@ -314,7 +314,7 @@ class _CategoryManageSheetState extends State<CategoryManageSheet> {
                   onPressed: () => setState(() => _adding = true),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppColors.primary,
-                    side: const BorderSide(color: AppColors.primary),
+                    side: BorderSide(color: AppColors.primary),
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                   ),

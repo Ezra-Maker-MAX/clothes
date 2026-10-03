@@ -1,0 +1,18 @@
+# Android release 签名配置（**不要提交本文件**，它含签名口令）
+#
+# 为什么需要：release 构建原来直接用 debug 签名（build.gradle.kts 里的 TODO），
+# 后果有两个：① 任何人都能用同一把 debug key 生成同包名的「官方」包覆盖你的
+# 安装；② debug 签名的 APK 无法通过任何应用商店审核。对存放私密照片的 App
+# 来说这是硬伤。
+#
+# 使用方式（本地 / CI 都一样）：
+#   1) 把 yinian-release.p12 放到本地任意安全位置（**不要**提交进git）
+#   2) 在项目根目录的 android/key.properties 填好下面四项（同样不入库）
+#   3) 正常 flutter build apk --release 即可自动读取
+#
+# build.gradle.kts 的逻辑：有 key.properties 就用真签名；没有就**明确报错**，
+# 而不是悄悄退回 debug 签名——静默退回正是当初这个问题的根源。
+storeFile=yinian-release.p12
+storePassword=
+keyAlias=yinian
+keyPassword=

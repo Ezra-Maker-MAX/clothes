@@ -150,6 +150,10 @@ export async function handler(req: VercelRequest, res: VercelResponse) {
     const reason = polished ?? ruleReason;
     const makeup = MAKEUP[occasion] ?? MAKEUP.casual;
     const outfitJson = { items: picked.outfit, reason, makeup };
+    // 如实记录文案来源：规则模板还是 LLM 润色。原来恒写死 'rule-based'，
+    // 导致这列永远反映不出真实情况——想回头统计「LLM 到底有没有生效过」时，
+    // 数据是不可信的。
+    const modelTag = polished ? `llm:${process.env.LLM_MODEL ?? 'unknown'}` : 'rule-based';
 
     // ---------- 3) 写缓存（UPSERT，refresh 时覆盖） ----------
     const recId = uuid();
@@ -157,7 +161,7 @@ export async function handler(req: VercelRequest, res: VercelResponse) {
       sql: `INSERT INTO daily_recommendations
             (id, user_id, recommend_date, occasion, weather_snapshot,
              outfit_json, item_ids, reason, makeup, status, swap_count, model, expires_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,'rule-based', datetime(?, '+1 day'))
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?, datetime(?, '+1 day'))
             ON CONFLICT(user_id, recommend_date, occasion) DO UPDATE SET
               weather_snapshot=excluded.weather_snapshot,
               outfit_json=excluded.outfit_json,
@@ -165,13 +169,14 @@ export async function handler(req: VercelRequest, res: VercelResponse) {
               reason=excluded.reason,
               makeup=excluded.makeup,
               status='shown',
+              model=excluded.model,
               swap_count=daily_recommendations.swap_count+1,
               updated_at=datetime('now')`,
       args: [
         recId, userId, date, occasion, JSON.stringify(weather),
         JSON.stringify(outfitJson),
         JSON.stringify(Object.values(picked.outfit).map(i => i.id)),
-        reason, makeup, 'shown', refresh ? 0 : 0, date,
+        reason, makeup, 'shown', 0, modelTag, date,
       ],
     });
 

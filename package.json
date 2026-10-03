@@ -8,11 +8,12 @@
     "typecheck": "tsc --noEmit",
     "deploy": "vercel --prod",
     "local": "tsx scripts/dev-server.ts",
-    "seed": "node scripts/seed-local.mjs"
+    "seed": "node scripts/seed-local.mjs",
+    "test": "node --import tsx --test --test-concurrency=1 tests/*.test.mjs"
   },
   "dependencies": {
     "@libsql/client": "^0.14.0",
-    "@vercel/blob": "^0.27.0"
+    "@vercel/blob": "^2.8.0"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",

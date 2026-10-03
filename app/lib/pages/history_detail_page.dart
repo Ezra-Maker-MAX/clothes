@@ -96,10 +96,10 @@ class _HistoryDetailPageState extends State<HistoryDetailPage> {
         scrolledUnderElevation: 0,
         leading: IconButton(
           onPressed: () => Navigator.pop(context),
-          icon: const Icon(Icons.arrow_back_rounded, color: AppColors.textMain),
+          icon: Icon(Icons.arrow_back_rounded, color: AppColors.textMain),
         ),
         title: Text('${e.date} · ${e.occasionLabel}',
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textMain)),
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textMain)),
         centerTitle: true,
       ),
       body: ListView(
@@ -189,7 +189,7 @@ class _HistoryDetailPageState extends State<HistoryDetailPage> {
       height: 200,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(AppColors.radius),
-        gradient: const LinearGradient(
+        gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [AppColors.itemTop, AppColors.itemBottom],
@@ -206,7 +206,7 @@ class _HistoryDetailPageState extends State<HistoryDetailPage> {
       alignment: Alignment.center,
       child: Text(
         it.name.isEmpty ? '👗' : it.name.characters.first,
-        style: const TextStyle(fontSize: 64, color: AppColors.primary, fontWeight: FontWeight.w300),
+        style: TextStyle(fontSize: 64, color: AppColors.primary, fontWeight: FontWeight.w300),
       ),
     );
   }
@@ -273,12 +273,12 @@ class _HistoryDetailPageState extends State<HistoryDetailPage> {
               Icon(icon, size: 16, color: AppColors.primary),
               const SizedBox(width: 6),
               Text(title,
-                  style: const TextStyle(
+                  style: TextStyle(
                       fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMain)),
             ],
           ),
           const SizedBox(height: 8),
-          Text(body, style: const TextStyle(fontSize: 13, color: AppColors.textSub, height: 1.6)),
+          Text(body, style: TextStyle(fontSize: 13, color: AppColors.textSub, height: 1.6)),
         ],
       ),
     );
@@ -298,13 +298,13 @@ class _HistoryDetailPageState extends State<HistoryDetailPage> {
         children: [
           Row(
             children: [
-              const Icon(Icons.edit_note_rounded, size: 18, color: AppColors.primary),
+              Icon(Icons.edit_note_rounded, size: 18, color: AppColors.primary),
               const SizedBox(width: 6),
-              const Text('穿搭日记',
+              Text('穿搭日记',
                   style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMain)),
               const Spacer(),
               if (_saving)
-                const SizedBox(
+                SizedBox(
                   width: 14, height: 14,
                   child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary),
                 )
@@ -325,10 +325,10 @@ class _HistoryDetailPageState extends State<HistoryDetailPage> {
           TextField(
             controller: _nameCtrl,
             onChanged: (_) => _markDirty(),
-            style: const TextStyle(fontSize: 13, color: AppColors.textMain),
+            style: TextStyle(fontSize: 13, color: AppColors.textMain),
             decoration: InputDecoration(
               hintText: '给这套起个名字（可留空）：如「被夸了的一天」',
-              hintStyle: const TextStyle(fontSize: 12, color: AppColors.textHint),
+              hintStyle: TextStyle(fontSize: 12, color: AppColors.textHint),
               isDense: true,
               contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               filled: true,
@@ -346,11 +346,11 @@ class _HistoryDetailPageState extends State<HistoryDetailPage> {
             maxLines: 6,
             minLines: 4,
             maxLength: 2000,
-            style: const TextStyle(fontSize: 13, color: AppColors.textMain, height: 1.6),
+            style: TextStyle(fontSize: 13, color: AppColors.textMain, height: 1.6),
             decoration: InputDecoration(
               hintText: '今天这身怎么样？'
                   '\n· 舒服/难穿\n· 哪里被夸了\n· 下次想换成什么',
-              hintStyle: const TextStyle(fontSize: 12.5, color: AppColors.textHint, height: 1.6),
+              hintStyle: TextStyle(fontSize: 12.5, color: AppColors.textHint, height: 1.6),
               filled: true,
               fillColor: AppColors.bg,
               border: OutlineInputBorder(
@@ -360,7 +360,7 @@ class _HistoryDetailPageState extends State<HistoryDetailPage> {
             ),
           ),
           if (e.notes.isEmpty && !_dirty)
-            const Text('留空也没关系，写一句给自己看的东西就行。',
+            Text('留空也没关系，写一句给自己看的东西就行。',
                 style: TextStyle(fontSize: 11, color: AppColors.textHint)),
         ],
       ),
@@ -378,7 +378,7 @@ class _HistoryDetailPageState extends State<HistoryDetailPage> {
       ),
       child: Row(
         children: [
-          const Text('今天穿得怎么样',
+          Text('今天穿得怎么样',
               style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMain)),
           const Spacer(),
           ...List.generate(5, (i) {

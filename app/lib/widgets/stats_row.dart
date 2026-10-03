@@ -41,13 +41,13 @@ class StatsRow extends StatelessWidget {
                 Icon(icon, size: 12, color: AppColors.textHint),
                 const SizedBox(width: 4),
                 Text(label,
-                    style: const TextStyle(fontSize: 11, color: AppColors.textSub)),
+                    style: TextStyle(fontSize: 11, color: AppColors.textSub)),
               ],
             ),
             const SizedBox(height: 6),
             // 统计数字：蜜桃橙高亮
             Text('$value',
-                style: const TextStyle(
+                style: TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.bold,
                     color: AppColors.accent,

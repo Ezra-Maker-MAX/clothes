@@ -25,6 +25,9 @@ import * as history from '../server/handlers/history';
 import * as upload from '../server/handlers/upload';
 import * as importOrder from '../server/handlers/import-order';
 import * as health from '../server/handlers/health';
+import * as privateVerify from '../server/handlers/private-verify';
+import * as privateProfile from '../server/handlers/private-profile';
+import * as privateImage from '../server/handlers/private-image';
 
 type Handler = (req: VercelRequest, res: VercelResponse) => Promise<unknown> | unknown;
 
@@ -36,6 +39,9 @@ const routes: Record<string, Handler> = {
   upload: upload.handler,
   'import-order': importOrder.handler,
   health: health.handler,
+  'private-verify': privateVerify.handler,
+  'private-profile': privateProfile.handler,
+  'private-image': privateImage.handler,
 };
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {

@@ -33,7 +33,7 @@ class GreetingHeader extends StatelessWidget {
               children: [
                 Text(
                   '${weather.condition} · ${weather.city}',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 12,
                     color: AppColors.textSub,
                     letterSpacing: 0.5,
@@ -42,7 +42,7 @@ class GreetingHeader extends StatelessWidget {
                 const SizedBox(height: 6),
                 Text(
                   greeting,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 22,
                     fontWeight: FontWeight.bold,
                     color: AppColors.textMain,
@@ -52,7 +52,7 @@ class GreetingHeader extends StatelessWidget {
                 const SizedBox(height: 6),
                 Text(
                   tip,
-                  style: const TextStyle(fontSize: 13, color: AppColors.textSub),
+                  style: TextStyle(fontSize: 13, color: AppColors.textSub),
                 ),
               ],
             ),
@@ -66,7 +66,7 @@ class GreetingHeader extends StatelessWidget {
                 Container(
                   width: 52,
                   height: 52,
-                  decoration: const BoxDecoration(
+                  decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     gradient: LinearGradient(
                       begin: Alignment.topLeft,
@@ -88,14 +88,14 @@ class GreetingHeader extends StatelessWidget {
                   right: -3, top: -3,
                   child: Container(
                     padding: const EdgeInsets.all(3),
-                    decoration: const BoxDecoration(
+                    decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       color: AppColors.card,
                       boxShadow: [
                         BoxShadow(color: Color(0x22715F9B), blurRadius: 6),
                       ],
                     ),
-                    child: const Icon(Icons.settings_rounded,
+                    child: Icon(Icons.settings_rounded,
                         size: 12, color: AppColors.textSub),
                   ),
                 ),

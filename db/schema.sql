@@ -126,12 +126,15 @@ CREATE TABLE IF NOT EXISTS daily_recommendations (
   item_ids          TEXT,                        -- 推荐单品 ID JSON 数组（快速排重比对）
   reason            TEXT,                        -- 匹配理由文案（详情页直读）
   makeup            TEXT,                        -- 妆容推荐
-  alt_outfits_json  TEXT,                        -- 备选搭配 JSON 数组（"换一套"优先从这里取，0 成本）
+  alt_outfits_json  TEXT,                        -- ⚠️ 预留未启用：「换一套」改用下方 swap_count + rotation
+                                                 --    在评分前三候选间实时轮换（见 recommend.ts），
+                                                 --    0额外存储、0延迟。此列保留仅为向后兼容，
+                                                 --    全项目无任何读写，新库可忽略
   status            TEXT NOT NULL DEFAULT 'pending',
                     -- pending=已生成未展示 / shown=已展示 / accepted=就穿这套
   is_accepted       INTEGER NOT NULL DEFAULT 0,  -- 用户点了"就穿这套"
   swap_count        INTEGER NOT NULL DEFAULT 0,  -- "换一套"次数（观察选择困难度）
-  model             TEXT DEFAULT 'rule-based',   -- 生成来源: rule-based/llm-xxx
+  model             TEXT DEFAULT 'rule-based',   -- 生成来源: rule-based / llm:<模型名>（LLM 润色成功时）
   expires_at        TEXT,                        -- 缓存过期时间（次日 05:00，跨夜兜底）
   created_at        TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at        TEXT NOT NULL DEFAULT (datetime('now')),
@@ -139,3 +142,16 @@ CREATE TABLE IF NOT EXISTS daily_recommendations (
 );
 
 CREATE INDEX IF NOT EXISTS idx_rec_user_date ON daily_recommendations(user_id, recommend_date DESC);
+
+-- ------------------------------------------------------------
+-- private_profile —— 私密空间数据（内衣模式，密码门禁之后才可达）
+-- 访问走 /api/private-profile（HMAC token 鉴权），图片本体在 Vercel Blob
+-- body 结构: { parts: { head: {skin,skinHex,imageUrl}, ... }, measures: { underbust, ... } }
+-- photos 结构: [ "https://...blob...", ... ]
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS private_profile (
+  user_id    TEXT PRIMARY KEY,
+  body       TEXT NOT NULL DEFAULT '{}',
+  photos     TEXT NOT NULL DEFAULT '[]',
+  updated_at TEXT DEFAULT (datetime('now'))
+);

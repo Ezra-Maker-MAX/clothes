@@ -1,8 +1,21 @@
 /**
  * /api/upload —— 衣橱单品图片上传（Vercel Blob）
  *
- * POST body(JSON): { filename, contentType, dataBase64 }
- *   → 返回 { url, cutoutUrl? }，Flutter 端拿到后调 POST /api/wardrobe 落库
+ * POST body(JSON): { filename, contentType, dataBase64, folder? }
+ *   → folder='wardrobe'（默认）返回 { url, cutoutUrl? }，Flutter 拿到后调 POST /api/wardrobe 落库
+ *   → folder='private'（私密部位图/相册）返回 { pathname, access:'private' }，
+ *     **url 恒为 null**：私有 blob 的 URL 无凭据访问不了，展示请走 /api/private-image代理。
+ *
+ * 🔒 两类图片走**两个独立的 Blob store**（Vercel 的 access 是 store 级属性，
+ *    同一个 store 无法一半 public 一半 private）：
+ *    - 公开 store（BLOB_*）：衣橱单品图，access public，URL 直链可看
+ *    - 私密 store（PRIVATE_BLOB_*）：身体部位图/私密相册，access private，
+ *      URL 匿名访问 403，只有服务端 get() 带凭据才能取流
+ *    私密 store 未配置 →私密上传**直接 503 拒绝**，绝不静默落公开 store。
+ *
+ * 鉴权不对称是有意的：公开图免鉴权（App 首页开箱即用，衣橱图不敏感），
+ * 私密图必须 `Authorization: Bearer <private-token>`（/api/private-verify 颁发），
+ * 否则任何人 POST 都能往用户私库里塞图烧配额。
  *
  * AI 抠图挂载点（已接通，env 可选配置，未配置/失败一律静默降级为原图，绝不阻断上传）：
  *   REMBG_API_URL     通用自部署抠图端点：POST 图片二进制 → 返回透明 PNG 二进制
@@ -24,7 +37,14 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { put } from '@vercel/blob';
 import { cors, ok, fail } from '../lib/http';
 import { uuid } from '../lib/db';
-import { probeBlob, blobAuthMode } from '../lib/blob';
+import {
+  probeBlob,
+  blobAuthMode,
+  privateBlobConfigured,
+  privateBlobAuth,
+  PRIVATE_BLOB_SETUP_HINT,
+} from '../lib/blob';
+import { verifyPrivateToken, tokenOf } from '../lib/private-token';
 
 /** 抠图超时：8s 拿不到就当没有，主链路（原图）早已落 Blob 成功 */
 const CUTOUT_TIMEOUT_MS = 8000;
@@ -84,6 +104,8 @@ export async function handler(req: VercelRequest, res: VercelResponse) {
       ready: blob.ready,
       authMode: blobAuthMode(),
       detail: blob.detail,
+      privateReady: privateBlobConfigured(),
+      privateHint: privateBlobConfigured() ? null : PRIVATE_BLOB_SETUP_HINT,
       hint: blob.ready
         ? 'Blob 已就绪，可直接上传'
         : blob.detail,
@@ -100,6 +122,22 @@ export async function handler(req: VercelRequest, res: VercelResponse) {
   const b = req.body ?? {};
   if (!b.filename || !b.dataBase64) return fail(res, 400, 'filename 与 dataBase64 必填');
 
+  // folder 白名单：private=私密空间（身体部位图/私密相册），其余一律 wardrobe
+  const folder = b.folder === 'private' ? 'private' : 'wardrobe';
+
+  // 🔒 私密图必须有会话令牌：否则任何人 POST 就能往用户私库里塞图烧配额，
+  //    也会让私密空间的访问控制形同虚设。公开图（衣橱）保持免鉴权，
+  //    因为 App 首页开箱即用，衣橱图本身也不是敏感数据。
+  if (folder === 'private' && !verifyPrivateToken(tokenOf(req))) {
+    return fail(res, 401, '私密空间会话无效或已过期，请重新输密码解锁');
+  }
+
+  // 🔒 私密存储未配置时**直接拒绝**，绝不静默回退到公开 store。
+  //    回退 =私密照片以公开 URL 落盘 =这次改造白做，且用户完全无感知。
+  if (folder === 'private' && !privateBlobConfigured()) {
+    return fail(res, 503, PRIVATE_BLOB_SETUP_HINT);
+  }
+
   try {
     const buf = Buffer.from(String(b.dataBase64), 'base64');
     // ⚠️ Vercel Serverless Function 请求体硬上限 4.5MB（Hobby 计划不可调），
@@ -110,15 +148,27 @@ export async function handler(req: VercelRequest, res: VercelResponse) {
       return fail(res, 413, '图片超过 3MB，请用最新版 App 上传（新版会自动压缩）');
 
     const safeName = String(b.filename).replace(/[^\w.-]/g, '_');
-    const blob = await put(`wardrobe/${uuid()}-${safeName}`, buf, {
-      access: 'public',
-      contentType: String(b.contentType ?? 'image/jpeg'),
-      addRandomSuffix: false,
-    });
+    // 私密图走独立私有 store（access:'private'，URL 不可公开访问，
+    // 只能由服务端 get() 带凭据取流）；公开图仍用原公开 store。
+    const pathname = `${folder}/${uuid()}-${safeName}`;
+    const blob =
+      folder === 'private'
+        ? await put(pathname, buf, {
+            access: 'private',
+            contentType: String(b.contentType ?? 'image/jpeg'),
+            addRandomSuffix: false,
+            ...privateBlobAuth(),
+          })
+        : await put(pathname, buf, {
+            access: 'public',
+            contentType: String(b.contentType ?? 'image/jpeg'),
+            addRandomSuffix: false,
+          });
 
-    // AI 抠图：成功则把透明 PNG 也落 Blob（原 blob.url 已在手，失败静默降级）
+    // AI 抠图：成功则把透明 PNG 也落公开 Blob（私密照片不抠图：
+    // 部位照抠了反而丢肤色/细节参照，且透明通道对肤色识别有害）
     let cutoutUrl: string | null = null;
-    const cut = await cutout(buf);
+    const cut = folder === 'wardrobe' ? await cutout(buf) : null;
     if (cut) {
       const cutBlob = await put(`wardrobe/${uuid()}-cutout.png`, cut, {
         access: 'public',
@@ -128,7 +178,16 @@ export async function handler(req: VercelRequest, res: VercelResponse) {
       cutoutUrl = cutBlob.url;
     }
 
-    return ok(res, { url: blob.url, cutoutUrl, size: buf.length });
+    // 私密图**不回传 url**：私有 blob 的 URL 无鉴权访问不了，回传等于给用户
+    // 一个「看起来能用其实 403」的假地址。改回传 pathname，客户端展示时走
+    // /api/private-image 代理取流（该接口验 token）。
+    return ok(res, {
+      url: folder === 'private' ? null : blob.url,
+      pathname: blob.pathname,
+      access: folder === 'private' ? 'private' : 'public',
+      cutoutUrl,
+      size: buf.length,
+    });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     // 判定要覆盖 OIDC 与 token 两种模式的报错措辞，否则改成 OIDC 后提示会指向错误方向

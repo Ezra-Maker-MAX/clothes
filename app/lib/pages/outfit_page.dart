@@ -103,7 +103,7 @@ class _OutfitPageState extends State<OutfitPage> {
             _bgPalette(),
             const SizedBox(height: 8),
             if (_loading)
-              const Padding(
+              Padding(
                 padding: EdgeInsets.only(top: 60),
                 child: Center(child: CircularProgressIndicator(color: AppColors.primary)),
               )
@@ -138,25 +138,25 @@ class _OutfitPageState extends State<OutfitPage> {
       children: [
         Row(
           children: [
-            const Text('搭配',
+            Text('搭配',
                 style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppColors.textMain)),
             const SizedBox(width: 6),
-            const Icon(Icons.auto_awesome_rounded, size: 20, color: AppColors.accent),
+            Icon(Icons.auto_awesome_rounded, size: 20, color: AppColors.accent),
             const Spacer(),
-            Text(countText, style: const TextStyle(fontSize: 12.5, color: AppColors.textSub)),
+            Text(countText, style: TextStyle(fontSize: 12.5, color: AppColors.textSub)),
           ],
         ),
         const SizedBox(height: 4),
         Text(
           _real ? '穿过的每一套都记着，右下角 + 自己动手配一套。' : '每一套都被认真记住，穿过的不再重复推给你。',
-          style: const TextStyle(fontSize: 12.5, color: AppColors.textSub),
+          style: TextStyle(fontSize: 12.5, color: AppColors.textSub),
         ),
         if (_errorDetail != null) ...[
           const SizedBox(height: 2),
           Text('数据加载失败：$_errorDetail',
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 10.5, color: AppColors.textHint)),
+              style: TextStyle(fontSize: 10.5, color: AppColors.textHint)),
         ],
       ],
     );
@@ -168,7 +168,7 @@ class _OutfitPageState extends State<OutfitPage> {
       padding: const EdgeInsets.only(bottom: 4),
       child: Row(
         children: [
-          const Text('卡底色',
+          Text('卡底色',
               style: TextStyle(fontSize: 11.5, color: AppColors.textHint)),
           const SizedBox(width: 10),
           for (final c in _kBgChoices) ...[
@@ -190,7 +190,7 @@ class _OutfitPageState extends State<OutfitPage> {
             const SizedBox(width: 8),
           ],
           const Spacer(),
-          const Text('点一下换背景',
+          Text('点一下换背景',
               style: TextStyle(fontSize: 10.5, color: AppColors.textHint)),
         ],
       ),
@@ -210,10 +210,10 @@ class _OutfitPageState extends State<OutfitPage> {
         children: [
           const Text('🪞', style: TextStyle(fontSize: 44)),
           const SizedBox(height: 10),
-          const Text('还没有搭配记录',
+          Text('还没有搭配记录',
               style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textMain)),
           const SizedBox(height: 6),
-          const Text('去首页「就穿这套」，或点右下角 + 自己配一套',
+          Text('去首页「就穿这套」，或点右下角 + 自己配一套',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 12.5, color: AppColors.textSub)),
         ],
@@ -272,8 +272,9 @@ class _OutfitPageState extends State<OutfitPage> {
     required String occasion,
     required String date,
     required bool isDiy,
-    Color bgColor = AppColors.card,
+    Color? bgColor,
   }) {
+    bgColor ??= AppColors.card; // 哨兵默认：主题 getter 化后默认值不能是 const
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
@@ -308,7 +309,7 @@ class _OutfitPageState extends State<OutfitPage> {
                         color: AppColors.primarySoft,
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: const Text('DIY',
+                      child: Text('DIY',
                           style: TextStyle(
                               fontSize: 9.5,
                               fontWeight: FontWeight.bold,
@@ -328,11 +329,11 @@ class _OutfitPageState extends State<OutfitPage> {
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(occasion,
-                    style: const TextStyle(
+                    style: TextStyle(
                         fontSize: 10.5, color: AppColors.primary, fontWeight: FontWeight.w600)),
               ),
               const Spacer(),
-              Text(date, style: const TextStyle(fontSize: 10.5, color: AppColors.textSub)),
+              Text(date, style: TextStyle(fontSize: 10.5, color: AppColors.textSub)),
             ],
           ),
         ],
@@ -345,7 +346,7 @@ class _OutfitPageState extends State<OutfitPage> {
     if (!_real) {
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
-        ..showSnackBar(const SnackBar(
+        ..showSnackBar(SnackBar(
           content: Text('今日搭配已经在首页等你了，去穿上它。'),
           backgroundColor: AppColors.textMain,
           behavior: SnackBarBehavior.floating,
@@ -439,17 +440,17 @@ class _DiyOutfitSheetState extends State<DiyOutfitSheet> {
           children: [
             Row(
               children: [
-                const Text('DIY 搭配',
+                Text('DIY 搭配',
                     style: TextStyle(
                         fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textMain)),
                 const Spacer(),
                 IconButton(
                   onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.close_rounded, color: AppColors.textSub),
+                  icon: Icon(Icons.close_rounded, color: AppColors.textSub),
                 ),
               ],
             ),
-            const Text('从你的衣橱里挑三件，配一套今天想穿的。',
+            Text('从你的衣橱里挑三件，配一套今天想穿的。',
                 style: TextStyle(fontSize: 12.5, color: AppColors.textSub)),
             const SizedBox(height: 14),
             _section('上衣', _of(['上衣']), _top, (id) => setState(() => _top = id)),
@@ -489,10 +490,10 @@ class _DiyOutfitSheetState extends State<DiyOutfitSheet> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text('$title · ${items.length}',
-              style: const TextStyle(fontSize: 12.5, color: AppColors.textSub)),
+              style: TextStyle(fontSize: 12.5, color: AppColors.textSub)),
           const SizedBox(height: 8),
           if (items.isEmpty)
-            const Text('衣橱里还没有这一类，先去「衣橱」添加',
+            Text('衣橱里还没有这一类，先去「衣橱」添加',
                 style: TextStyle(fontSize: 12, color: AppColors.textHint))
           else
             Wrap(

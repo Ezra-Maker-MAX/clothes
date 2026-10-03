@@ -1,5 +1,10 @@
 /**
  * HTTP 响应小工具：统一 JSON 结构 + CORS（Flutter Web 跨端调用必需）
+ *
+ * ⚠️ CORS 目前是 `*`：这是个**私有自用** App，没有第三方站点会来调它，
+ * 收紧到具体域名对当前用法毫无收益，反而会在「换个访问方式（内网 IP、
+ * 另一个端口调试）」时突然失败。将来若要嵌进别的网页或被第三方调用，
+ * 这里必须改成明确的允许名单。
  */
 import type { VercelResponse, VercelRequest } from '@vercel/node';
 

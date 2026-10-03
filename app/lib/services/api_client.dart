@@ -8,6 +8,7 @@
 //    客户端永远只走 HTTPS 调 API，绝不落库凭证。
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -18,8 +19,14 @@ import 'mock_data.dart';
 class ApiClient {
   ApiClient._();
 
-  /// 第三阶段通过 --dart-define=USE_MOCK=false 关闭模拟；默认保持 true（稳妥）
-  static const bool useMock = bool.fromEnvironment('USE_MOCK', defaultValue: true);
+  /// 第三阶段通过 --dart-define=USE_MOCK=false 关闭模拟。
+  ///
+  /// ⚠️ 默认改为 **false**（原为 true）。原因：默认值true 是个隐形陷阱——
+  ///   忘记加 --dart-define=USE_MOCK=false 打包，会得到一个「看起来完全正常、
+  ///   但所有写入都只落本地 SP、永远不联库」的 App，而且**没有任何报错提示**。
+  ///   对这个项目尤其危险：私密数据涉及身体数据，用户会误以为已上云。
+  ///   想跑演示模式请显式 --dart-define=USE_MOCK=true。
+  static const bool useMock = bool.fromEnvironment('USE_MOCK', defaultValue: false);
 
   /// --dart-define=API_BASE_URL=... 注入后端地址（本地联调 / Vercel 域名）
   static const String baseUrl = String.fromEnvironment(
@@ -270,7 +277,10 @@ class ApiClient {
         wardrobeItems: wardrobeItems, monthOutfits: monthOutfits, neverWorn: neverWorn,
       );
     } catch (_) {
-      return MockData.stats; // 统计失败不影响主流程，回退展示
+      // ⚠️ 这里原来回退 MockData.stats（47/18/9 假数据）——比直接报错更糟：
+      //   接口挂了却把演示数字当成真实统计展示给用户，用户完全无法分辨。
+      //   改成全0：数字明显不对，用户知道数据没加载出来，不会被假数据误导。
+      return const HomeStats(wardrobeItems: 0, monthOutfits: 0, neverWorn: 0);
     }
   }
 
@@ -524,22 +534,35 @@ class ApiClient {
   }
 
   /// 上传单品图片（/api/upload，base64 JSON 协议）
-  /// 返回 (url, cutoutUrl)：cutoutUrl 为服务端 AI 抠图结果（未配置/失败为 null）
+  /// 返回 (url, cutoutUrl, pathname)：
+  ///   - 公开图（folder=wardrobe）：url 是可直接显示的直链
+  ///   - 私密图（folder=private）：url 恒为空串，改用 privateImageUrl(pathname)
+  ///     经鉴权代理取流；cutoutUrl 为服务端 AI 抠图结果（未配置/失败为 null）
   /// 服务端未开通 Blob 存储时抛 501 异常（文案已含开通指引）
-  static Future<({String url, String? cutoutUrl})> uploadImage({
+  static Future<({String url, String? cutoutUrl, String pathname})> uploadImage({
     required List<int> bytes,
     required String filename,
     String contentType = 'image/jpeg',
+    String folder = 'wardrobe', // private=私密空间图（不跑抠图）
+    String? privateToken, // folder=private 时必填，否则服务端 401
   }) async {
     if (useMock) throw Exception('演示模式：无需上传图片');
+    final isPrivate = folder == 'private';
+    if (isPrivate && (privateToken == null || privateToken.isEmpty)) {
+      throw Exception('私密上传缺少会话令牌，请重新解锁私密空间');
+    }
     final res = await _http
         .post(
           Uri.parse('$baseUrl/api/upload?userId=$demoUserId'),
-          headers: {'Content-Type': 'application/json'},
+          headers: {
+            'Content-Type': 'application/json',
+            if (isPrivate) 'Authorization': 'Bearer $privateToken',
+          },
           body: jsonEncode({
             'filename': filename,
             'contentType': contentType,
             'dataBase64': base64Encode(bytes),
+            'folder': folder,
           }),
         )
         .timeout(_genTimeout); // 图片较大时上传慢，给足时间
@@ -549,7 +572,36 @@ class ApiClient {
     return (
       url: (data['url'] as String?) ?? '',
       cutoutUrl: data['cutoutUrl'] as String?,
+      pathname: (data['pathname'] as String?) ?? '',
     );
+  }
+
+  /// 私密图的鉴权取图地址（配合 [privateImageHeaders] 给 Image.network 用）
+  ///
+  /// 私密图存在access=private 的 store 里，直链匿名 403 —— 这是正确行为。
+  /// 统一走服务端代理：只有带着会话令牌才放行，取流用的 Blob 凭据不落到客户端。
+  static Uri privateImageUri(String pathname, String token) =>
+      Uri.parse('$baseUrl/api/private-image')
+          .replace(queryParameters: {'pathname': pathname});
+
+  /// 私密图请求头（Authorization 走 header，**不要**塞进 query——
+  /// query 会被浏览器历史与访问日志记录，等于泄露令牌）
+  static Map<String, String> privateImageHeaders(String token) =>
+      {'Authorization': 'Bearer $token'};
+
+  /// 下载私密图字节（供 AI 生成时读部位图当reference）
+  /// 走同一个鉴权代理；返回 null 表示失败（调用方应跳过该部位而非中断生成）
+  static Future<Uint8List?> fetchPrivateImage(
+      String pathname, String token) async {
+    try {
+      final res = await _http
+          .get(privateImageUri(pathname, token), headers: privateImageHeaders(token))
+          .timeout(_genTimeout);
+      if (res.statusCode != 200 || res.bodyBytes.isEmpty) return null;
+      return res.bodyBytes;
+    } catch (_) {
+      return null;
+    }
   }
 
   // ---------------------------------------------------------------
@@ -596,5 +648,81 @@ class ApiClient {
     final d = int.tryParse(parts[2]);
     if (m == null || d == null) return dayPart;
     return '$m月$d日';
+  }
+
+  // ---------------------------------------------------------------
+  // 私密模式门禁（App 设置 → 私密空间）
+  // ---------------------------------------------------------------
+
+  /// POST /api/private-verify：密码只在服务端环境变量里比对，
+  /// 本地存储与安装包里不含任何密码信息。
+  /// 返回 (是否通过, 失败提示, 数据接口令牌 private-profile 用)
+  static Future<(bool, String, String?)> verifyPrivatePassword(
+      String password) async {
+    try {
+      final res = await _http
+          .post(
+            Uri.parse('$baseUrl/api/private-verify'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'password': password}),
+          )
+          .timeout(_fastTimeout);
+      final body = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+      if (res.statusCode == 200 && body['ok'] == true) {
+        final data = (body['data'] as Map<String, dynamic>?) ?? const {};
+        return (true, '', data['token'] as String?);
+      }
+      return (false, body['error'] as String? ?? '验证失败（HTTP ${res.statusCode}）', null);
+    } on TimeoutException {
+      return (false, '验证超时了，检查一下网络', null);
+    } catch (e) {
+      return (false, '连不上验证服务：$e', null);
+    }
+  }
+
+  /// GET /api/private-profile：拉云端私密数据（围度/肤色/部位图/相册 URL）
+  /// token 无效/网络失败返回 null（调用方回退本地缓存）
+  static Future<({Map<String, dynamic> body, List<dynamic> photos})?>
+      loadPrivateProfile(String token) async {
+    try {
+      final res = await _http
+          .get(
+            Uri.parse('$baseUrl/api/private-profile'),
+            headers: {'Authorization': 'Bearer $token'},
+          )
+          .timeout(_fastTimeout);
+      if (res.statusCode != 200) return null;
+      final decoded = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+      final data = (decoded['data'] as Map<String, dynamic>?) ?? const {};
+      return (
+        body: (data['body'] as Map<String, dynamic>?) ?? const {},
+        photos: (data['photos'] as List?) ?? const [],
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// PUT /api/private-profile：全量覆盖保存云端私密数据
+  /// 返回 null = 成功；否则为失败提示
+  static Future<String?> savePrivateProfile(
+      String token, Map<String, dynamic> body, List<String> photos) async {
+    try {
+      final res = await _http
+          .put(
+            Uri.parse('$baseUrl/api/private-profile'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $token',
+            },
+            body: jsonEncode({'body': body, 'photos': photos}),
+          )
+          .timeout(_fastTimeout);
+      if (res.statusCode == 200) return null;
+      final decoded = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+      return decoded['error'] as String? ?? '保存失败（HTTP ${res.statusCode}）';
+    } catch (e) {
+      return '云端保存失败：${e.toString().substring(0, 60.clamp(0, e.toString().length))}';
+    }
   }
 }

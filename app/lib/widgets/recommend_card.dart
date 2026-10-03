@@ -34,7 +34,7 @@ class RecommendCard extends StatelessWidget {
           // ---- 标题栏：标题 + 场景标签 ----
           Row(
             children: [
-              const Text('今日推荐穿搭',
+              Text('今日推荐穿搭',
                   style: TextStyle(
                       fontSize: 17,
                       fontWeight: FontWeight.bold,
@@ -48,7 +48,7 @@ class RecommendCard extends StatelessWidget {
                 ),
                 child: Text(
                   outfit.occasionLabel,
-                  style: const TextStyle(
+                  style: TextStyle(
                       fontSize: 11.5,
                       color: AppColors.primary,
                       fontWeight: FontWeight.w600),
@@ -72,7 +72,7 @@ class RecommendCard extends StatelessWidget {
           // ---- 妆容推荐（一行小字） ----
           Row(
             children: [
-              const Icon(Icons.face_retouching_natural_rounded,
+              Icon(Icons.face_retouching_natural_rounded,
                   size: 14, color: AppColors.accent),
               const SizedBox(width: 5),
               Expanded(
@@ -80,7 +80,7 @@ class RecommendCard extends StatelessWidget {
                   '妆容：${outfit.makeup}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 11.5, color: AppColors.textSub),
+                  style: TextStyle(fontSize: 11.5, color: AppColors.textSub),
                 ),
               ),
             ],
@@ -97,7 +97,7 @@ class RecommendCard extends StatelessWidget {
             ),
             child: Text(
               outfit.reason,
-              style: const TextStyle(
+              style: TextStyle(
                   fontSize: 13, color: AppColors.textMain, height: 1.55),
             ),
           ),
@@ -112,7 +112,7 @@ class RecommendCard extends StatelessWidget {
                   onPressed: swapping ? null : onSwap,
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppColors.primary,
-                    side: const BorderSide(color: AppColors.primary, width: 1.2),
+                    side: BorderSide(color: AppColors.primary, width: 1.2),
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12)),
                     padding: const EdgeInsets.symmetric(vertical: 13),

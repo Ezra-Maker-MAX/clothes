@@ -7,7 +7,7 @@
  *   B. 长效 token：Store → Tokens → Create Token 手动生成 BLOB_READ_WRITE_TOKEN，
  *      用于代码在 Vercel 之外运行（本地脚本、CI、client upload）。
  *
- * 另外：env 里有变量 ≠ store 真能用。Hobby 各���用量超限时Vercel 会直接封停 store
+ * 另外：env 里有变量 ≠ store 真能用。Hobby 各项用量超限时 Vercel 会直接封停 store
  * （list/put 全部 403 "store has been suspended"），代码侧无解只能提工单。
  * 所以就绪与否必须**实测**（list 一条），并把真实原因透出去。
  */
@@ -17,6 +17,39 @@ import { list } from '@vercel/blob';
 export function blobConfigured(): boolean {
   return Boolean(process.env.BLOB_STORE_ID || process.env.BLOB_READ_WRITE_TOKEN);
 }
+
+/**
+ *🔒 私密 store（存放身体部位图/私密相册）——与公开 store 分开的第二套凭据
+ *
+ * 为什么必须分开：Vercel Blob 的 access 属性是 **store 级**的，同一个 store 里
+ * 不能一半 public 一半 private。要私密就得单独建一个 access=Private 的 store，
+ * Vercel 会给它独立的环境变量前缀（默认 BLOB_，这里约定 PRIVATE_BLOB_）。
+ *
+ * 配置方式：Vercel → Storage → Create Storage → Blob → access 选 Private
+ *          → Advanced Options 把 prefix 设为 PRIVATE_BLOB_ → Connect to Project
+ *
+ *⚠️ 未配置时私密上传**直接报错**，绝不静默回退到公开 store——
+ *    回退意味着私密照片以公开 URL 落盘，等于这次改造没做。
+ *    这是刻意的「失败优于裸奔」设计。
+ */
+export function privateBlobConfigured(): boolean {
+  return Boolean(
+    process.env.PRIVATE_BLOB_STORE_ID || process.env.PRIVATE_BLOB_READ_WRITE_TOKEN,
+  );
+}
+
+/** 私密 store 的 SDK 认证参数（OIDC 优先，回落长效 token） */
+export function privateBlobAuth(): { storeId?: string; token?: string } {
+  const storeId = process.env.PRIVATE_BLOB_STORE_ID;
+  const token = process.env.PRIVATE_BLOB_READ_WRITE_TOKEN;
+  return { ...(storeId ? { storeId } : {}), ...(token ? { token } : {}) };
+}
+
+/** 私密 store 未配置时给用户看的指引（直接透传到 App 界面） */
+export const PRIVATE_BLOB_SETUP_HINT =
+  '私密图库未配置私密存储：Vercel → 项目 → Storage → Create Storage → Blob，'
+  + 'access 选 Private，Advanced Options 里把 prefix 填 PRIVATE_BLOB_，'
+  + '点 Continue 自动连上项目（无需手写 token），配置后需 Redeploy 生效。';
 
 /** 认证模式，仅用于自检展示 */
 export function blobAuthMode(): 'oidc' | 'token' | null {

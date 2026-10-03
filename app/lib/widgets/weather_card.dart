@@ -37,14 +37,14 @@ class WeatherCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text('${weather.tempC}',
-                        style: const TextStyle(
+                        style: TextStyle(
                             fontSize: 30, fontWeight: FontWeight.bold, color: AppColors.textMain)),
-                    const Text('°C',
+                    Text('°C',
                         style: TextStyle(fontSize: 15, color: AppColors.textSub, height: 2.2)),
                   ],
                 ),
                 Text('体感温度 ${weather.feelsLike}°C · ${weather.condition}',
-                    style: const TextStyle(fontSize: 13, color: AppColors.textSub)),
+                    style: TextStyle(fontSize: 13, color: AppColors.textSub)),
               ],
             ),
           ),
@@ -57,7 +57,7 @@ class WeatherCard extends StatelessWidget {
             ),
             child: Text(
               weather.label,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
                 color: AppColors.accent,

@@ -93,6 +93,14 @@ export async function ensureSchema(): Promise<void> {
     } catch {
       // 已迁移过
     }
+    // 私密空间数据：围度/肤色/部位图 URL（body JSON）+ 私密相册 URL 列表（photos JSON）
+    // 访问一律走 /api/private-profile（HMAC token 鉴权），不暴露匿名读写
+    await db.execute(`CREATE TABLE IF NOT EXISTS private_profile (
+      user_id    TEXT PRIMARY KEY,
+      body       TEXT NOT NULL DEFAULT '{}',
+      photos     TEXT NOT NULL DEFAULT '[]',
+      updated_at TEXT DEFAULT (datetime('now'))
+    )`);
     schemaReady = true;
   } catch (e) {
     // 迁移失败不阻断请求：调用方各自降级（分类用内置、价格不展示）
