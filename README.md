@@ -162,6 +162,15 @@ release 构建**不再退回 debug 签名**：缺配置会直接中断构建并�
 2. 照着 `app/android/key.properties.example` 填好四项，存为 `app/android/key.properties`（同样不入库）
 3. 正常 `flutter build apk --release`
 
+> **改`build.gradle.kts` 时注意一个坑**：读 `key.properties` 不能写
+> `java.util.Properties()`。Gradle Kotlin DSL 里 `java` 会解析成项目级的
+> Java 插件扩展，`java.util` 就成了该扩展的属性访问，报
+> `Unresolved reference 'util'`，连带 `getProperty`/`load` 全部失效，
+> 整个 `assembleRelease` 编译中断。正确写法是文件顶部显式
+> `import java.util.Properties` 然后用 `Properties()`，
+> 且 import 必须放在 `plugins {}` 块**之前**，放后面同样编译失败。
+> 这个错误只有真跑 Gradle 才暴露，`flutter analyze` 查不出来。
+
 ### 方式 B：GitHub Actions 出包（推荐，无需本地装Android SDK）
 
 工作流 `.github/workflows/android-build.yml` 已配好，会自动还原签名材料、
@@ -194,12 +203,35 @@ base64 -i app/android/yinian-release.p12 | tr -d '\n'
   ```
   产物自动进 Releases（含版本号的安装包），永久保留
 
->私钥只存在于 GitHub 加密存储与 runner 临时目录，任务结束即销毁，不入库。
+> 私钥只存在于 GitHub 加密存储与runner 临时目录，任务结束即销毁，不入库。
 > 缺任何签名 Secret 时构建会**明确失败**——这是刻意的，绝不产出 debug 签名的包。
 
 > `*.p12` / `*.jks` / `key.properties` 都已在 `.gitignore` 里。
 > **丢了 keystore 就没法再更新已发布的 App** —— 请单独备份到安全的地方。
 > 存在 GitHub Secrets 里的是一份副本，本地这份丢了可以从 Secret 还原。
+
+#### 校验签名为什么必须用 apksigner
+
+工作流里校验产物用的是 `apksigner verify --print-certs`，不是更常见的
+`keytool -printcert -jarfile`。原因很反直觉，值得记一笔：
+
+本项目 `minSdk = 24`，此时 AGP **默认关闭 v1 签名**（`enableV1Signing=false`），
+只生成 v2/v3 签名。两者的存放位置完全不同：
+
+|方案 | 签名存放位置 | keytool 能读吗 |
+|---|---|---|
+| v1（JAR） | `META-INF/*.RSA` | 能 |
+| v2 / v3 | ZIP 尾部的 `APK Sig Block 42` | **不能** |
+
+`keytool -printcert -jarfile` 只认 v1。对 v2-only 的包，它输出
+`Not a signed jar file`，**但退出码仍是 0** —— 于是 `set -e` 抓不到、
+`grep CN=Yinian` 又匹配不到，表现为「签名校验莫名失败」，很像签名坏了，
+其实是校验工具读不到。
+
+`apksigner` 能识别全部方案，而且会真正验证签名完整性（`keytool` 只读证书，
+不验签）。CI 上 `ubuntu-latest` 自带 Android SDK，直接可用。
+
+> 本地校验同理：`$ANDROID_HOME/build-tools/*/apksigner verify --print-certs app-release.apk`
 
 ## 测试
 
