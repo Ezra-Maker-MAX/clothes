@@ -12,6 +12,17 @@
 // （共 205 张，人工看图归档），不是从标签自动生成的——自动生成只会
 // 产出「坐姿 · 标签1 · 标签2」这种没有信息量的字符串。
 //
+// ── 已知的数据特征：分组按「源站分类」，不是按实际动作 ──────────
+// 有 47/232 条（20%）的中文名首词与所在分组不一致，例如：
+//   S-001 在「坐姿」组里但图是跪姿、 L-042 在「卧姿」组里但图是俯卧、
+//   K-033 在「跪姿」组里但图是仰卧。
+// 原因是 posemaniacs 的分类本身有交叉与遗漏，而我们**刻意不重新归类**：
+//   · 重新归类会与源站对不上，以后想核对原图时找不到出处；
+//   · 中文名是逐张看图写的，如实描述画面动作，改名会把它改成错的。
+// 所以分组只作为**浏览入口**，实际动作以中文名为准。
+// [PosePreset.nameLooksOffGroup] 就是给 UI 用的判据：命中时在详情里
+// 显式说明「源站归在这一类，图中实际是XX」，避免用户以为是 bug。
+//
 // ── 图片存哪 ────────────────────────────────────────────────
 // 参考图放在 Vercel **私密** Blob store 的 poses/ 目录下，
 // 私有 blob 的 URL 匿名访问直接 403，所以 App 不能像衣橱图那样
@@ -49,6 +60,18 @@ class PosePreset {
 
   /// 供 UI 显示的姿势图URL（经 Vercel 代理，私有 blob 不能直连）
   Uri? get imageUri => poseImageUri(imagePath);
+
+  /// 中文名首词描述的动作与所在分组不一致（源站分类问题，见文件头说明）。
+  /// 47/232 条为true：UI 应在详情里说明来源，而不是当成数据错误。
+  bool get nameLooksOffGroup {
+    final head = name.split('·').first;
+    final kws = switch (group) {
+      PoseGroup.sit => const ['坐', '蹲', '盘'],
+      PoseGroup.kneel => const ['跪'],
+      PoseGroup.lie => const ['卧', '躺'],
+    };
+    return !kws.any(head.contains);
+  }
 }
 
 class PoseLibrary {

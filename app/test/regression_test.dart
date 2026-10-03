@@ -258,6 +258,18 @@ void main() {
       expect(PoseLibrary.byId('不存在的姿势'), isNull);
     });
 
+    test('nameLooksOffGroup 与实际数据吻合（47 条源站归类与实际动作不符）', () {
+      // 这不是数据错误，是源站分类本身有交叉（如「坐姿」组里混了跪姿图）。
+      // UI 用这个判据在详情里如实说明来源。测试锁住当前值防止误改判据。
+      final off = PoseLibrary.all.where((p) => p.nameLooksOffGroup).toList();
+      expect(off.length, 47, reason: '源站分类若修正，条数会变，同步更新本断言');
+      // 每条都必须真的有可解释的实际动作（不能是判据乱命中）
+      for (final p in off) {
+        expect(p.name.contains('·'), isTrue,
+            reason: '${p.id} 命中判据但名字格式不对：${p.name}');
+      }
+    });
+
     test('每个分组都有可展示的标签与提示文案', () {
       for (final g in PoseGroup.values) {
         expect(PoseLibrary.groupLabels[g]?.trim(), isNotEmpty, reason: '分组 $g 缺标签');

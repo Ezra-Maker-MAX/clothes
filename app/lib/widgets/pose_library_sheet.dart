@@ -279,6 +279,24 @@ class _PoseLibrarySheetState extends State<PoseLibrarySheet> {
                       height: 1.5,
                       color: AppColors.textSub)),
               const SizedBox(height: 8),
+              // 分组按源站分类，名字按实际动作 —— 不一致时如实说明，
+              // 否则用户会以为分类错了（47/232 条会命中，详见 pose_library.dart 文件头）
+              if (p.nameLooksOffGroup) ...[
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.bg,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    '源站把这条归在「${PoseLibrary.groupLabels[p.group]}」，'
+                    '但图中实际动作如上。分组只作浏览入口，以名称为准。',
+                    style: TextStyle(fontSize: 11, height: 1.4, color: AppColors.textHint),
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(10),
