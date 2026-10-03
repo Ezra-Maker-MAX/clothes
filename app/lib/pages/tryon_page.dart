@@ -45,6 +45,10 @@ class _TryonPageState extends State<TryonPage> {
   /// 从姿势库选中的预设。**只存内存**：退出试衣间即消失，
   /// 不写 SharedPreferences、不进历史 —— 职业拍摄场景的使用痕迹隐私要求。
   PosePreset? _posePreset;
+  /// 是否把姿势库的参考图也发给模型。**默认 false**：
+  /// 参考图存在自家 Vercel 私密空间，默认只发文字描述（保持原有隐私承诺），
+  /// 用户当次显式打开才连图一起发。同样只存内存。
+  bool _sendPoseRefImage = false;
   bool _generating = false;
   String? _resultError;
 
@@ -269,11 +273,24 @@ class _TryonPageState extends State<TryonPage> {
         if (_privateStyle != null) 'privateStyle': _privateStyle!,
         if (partImgs.isNotEmpty) 'partImages': partImgs.keys.join(','),
       };
+
+      // 姿势参考图：用户自己传的优先级最高；没传且勾了「发送参考图」时，
+      // 才从 Vercel 私密 store 经/api/pose-image 代理拉姿势库那张。
+      // 拉不到就静默降级为纯文字 prompt——姿势描述已经带了，不该因此中断生成。
+      var poseImg = _poseBytes;
+      if (poseImg == null &&
+          _sendPoseRefImage &&
+          _posePreset != null &&
+          _posePreset!.imageUri != null) {
+        final ref = await _fetchPoseRefImage(_posePreset!);
+        if (ref != null) poseImg = ref;
+      }
+
       final img = await TryonService().generate(
         c: _config,
         personImages: _personImages,
         garmentImage: _garmentBytes!,
-        poseImage: _poseBytes,
+        poseImage: poseImg,
         body: _bodyFromForm(),
         prompt: prompts.isEmpty ? null : prompts.join(', '),
         options: opts.isEmpty ? null : opts,
@@ -337,9 +354,12 @@ class _TryonPageState extends State<TryonPage> {
           PoseSection(
             poseBytes: _poseBytes,
             preset: _posePreset,
+            sendRefImage: _sendPoseRefImage,
             onPickPoseImage: _pickPose,
             onClearPreset: () => setState(() => _posePreset = null),
             onPickFromLibrary: _pickFromLibrary,
+            onToggleSendRefImage: () =>
+                setState(() => _sendPoseRefImage = !_sendPoseRefImage),
             miniBtn: _miniBtn,
           ),
           if (AppColors.privateMode) ...[
@@ -562,7 +582,27 @@ class _TryonPageState extends State<TryonPage> {
   Future<void> _pickFromLibrary() async {
     final picked = await PoseLibrarySheet.pick(context, currentId: _posePreset?.id);
     if (picked == null || !mounted) return;
-    setState(() => _posePreset = picked);
+    setState(() {
+      _posePreset = picked;
+      // 换姿势时重置参考图开关：上一张的意愿不该替这一张做决定
+      _sendPoseRefImage = false;
+    });
+  }
+
+  /// 从自家 Vercel 拉姿势库参考图（经 /api/pose-image 代理）。
+  ///
+  /// 姿势图存在access=private 的 store，URL 匿名 403，所以必须走代理。
+  /// 任何失败都返回 null 而不抛——生成主链路不该因为一张参考图挂掉。
+  Future<Uint8List?> _fetchPoseRefImage(PosePreset p) async {
+    final u = p.imageUri;
+    if (u == null) return null;
+    try {
+      final r = await http.get(u).timeout(const Duration(seconds: 20));
+      if (r.statusCode != 200 || r.bodyBytes.isEmpty) return null;
+      return r.bodyBytes;
+    } catch (_) {
+      return null;
+    }
   }
 
   Widget _bodySection() {

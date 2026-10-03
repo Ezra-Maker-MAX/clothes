@@ -28,6 +28,7 @@ import * as health from '../server/handlers/health';
 import * as privateVerify from '../server/handlers/private-verify';
 import * as privateProfile from '../server/handlers/private-profile';
 import * as privateImage from '../server/handlers/private-image';
+import * as poseImage from '../server/handlers/pose-image';
 
 type Handler = (req: VercelRequest, res: VercelResponse) => Promise<unknown> | unknown;
 
@@ -42,6 +43,9 @@ const routes: Record<string, Handler> = {
   'private-verify': privateVerify.handler,
   'private-profile': privateProfile.handler,
   'private-image': privateImage.handler,
+  // 姿势参考图代理（私密 store → App 展示）。不需要私密会话令牌：
+  // 姿势图是公共素材不是用户隐私，详见 handler 内的说明。
+  'pose-image': poseImage.handler,
 };
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
