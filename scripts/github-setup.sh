@@ -94,29 +94,61 @@ echo
 echo "【推送代码】"
 BRANCH=$(git branch --show-current)
 echo "当前分支: $BRANCH"
-if git diff --quiet && git diff --cached --quiet; then
-  if git rev-parse --verify "origin/$BRANCH" >/dev/null 2>&1; then
-    LOCAL=$(git rev-parse HEAD)
-    REMOTE=$(git rev-parse "origin/$BRANCH")
-    if [ "$LOCAL" = "$REMOTE" ]; then
-      echo "✓ 已与远端同步，无需推送"
-    else
-      echo "→ 本地有 ${BRANCH} 未推送的提交，开始推送"
-      git push origin "$BRANCH"
-    fi
+git add -A
+if git diff --cached --quiet; then
+  echo "✓ 无未提交改动"
+else
+  echo "→ 提交本地改动"
+  git commit -m "chore: 同步本地改动"
+fi
+
+# 关键防呆：本地与远端分叉时不能硬推。
+# 真实教训：本地 reset 或换机器 clone 过，再push 会被拒；
+# 而 --force 会把远端独有的文件（比如别人提交的功能更新说明）直接抹掉。
+if git rev-parse --verify "origin/$BRANCH" >/dev/null 2>&1; then
+  git fetch origin "$BRANCH" --quiet || {
+    echo "✗ fetch 失败。若网络受限，可用 GitHub API 推送（见 README）。"
+    exit 1
+  }
+  LOCAL=$(git rev-parse HEAD)
+  REMOTE=$(git rev-parse "origin/$BRANCH")
+  if [ "$LOCAL" = "$REMOTE" ]; then
+    echo "✓ 已与远端同步，无需推送"
+  elif git merge-base --is-ancestor "$REMOTE" "$LOCAL" 2>/dev/null; then
+    echo "→ 本地领先远端，快进推送"
+    git push origin "$BRANCH"
   else
-    echo "→ 首次推送 $BRANCH"
-    git push -u origin "$BRANCH"
+    echo "✗ 本地与远端已分叉（各有对方没有的提交）。"
+    echo "  本地独有: $(git rev-list --count $REMOTE..$LOCAL) 个"
+    echo "  远端独有: $(git rev-list --count $LOCAL..$REMOTE) 个"
+    echo
+    # 最重要的一步：把远端独有的文件列出来。
+    # 强推的代价是这些文件无声消失——曾有一次远端存着 4 份功能更新说明，
+    # 本地没有，若直接 --force 就再也找不回来了。
+    # diff方向：git diff A B 里的 A 是「旧」，B 是「新」，
+    # 所以 --diff-filter=A 才是「B 有而 A 没有的」= 远端有、本地无。
+    echo "  ⚠ 远端有、本地没有的文件（强推会永久丢失）："
+    ONLY_REMOTE=$(git -c core.quotePath=false diff --name-only --diff-filter=A "$LOCAL" "$REMOTE" 2>/dev/null || true)
+    if [ -n "$ONLY_REMOTE" ]; then
+      echo "$ONLY_REMOTE" | sed 's/^/      · /'
+      echo
+      echo "    先取回这些文件再推（逐个执行，路径换成上面列出的）："
+      echo "      git checkout $REMOTE -- \"<文件路径>\""
+      echo "    然后 git add -A && git commit -m '取回远端独有文件'"
+    else
+      echo "      （无，远端文件本地都有）"
+    fi
+    echo
+    echo "  两边差异总览: git diff --stat $LOCAL..$REMOTE"
+    echo "  建议: git pull --rebase origin $BRANCH  （把远端提交逐个应用下来）"
+    echo
+    read -rp "已处理分叉后重试推送? [y/N] " GO
+    [ "${GO:-N}" = "y" ] || [ "${GO:-N}" = "Y" ] || { echo "已退出，未推送"; exit 1; }
+    git push origin "$BRANCH"
   fi
 else
-  echo "→ 有未提交改动，先提交"
-  git add -A
-  if git diff --cached --quiet; then
-    echo "✓ 无改动可提交"
-  else
-    git commit -m "chore: 同步本地改动"
-    git push -u origin "$BRANCH"
-  fi
+  echo "→ 首次推送 $BRANCH"
+  git push -u origin "$BRANCH"
 fi
 echo "✓ 推送完成"
 echo

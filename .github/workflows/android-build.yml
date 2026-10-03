@@ -104,14 +104,63 @@ jobs:
 
       # 验证产物确实是 release 签名而非 debug：debug 签名的包无法通过商店审核，
       # 且能被伪造覆盖，属于「构建成功但产物不可用」的隐性问题
+      #
+      # 为什么必须用 apksigner 而不是 keytool：
+      # minSdk=24 时 AGP 默认 enableV1Signing=false，只生成 v2/v3 签名。
+      # v2/v3 的签名块放在 ZIP 尾部（APK Sig Block 42），不产生 META-INF/*.RSA；
+      # 而 `keytool -printcert -jarfile` 只认 v1 的 .RSA 文件。
+      # 对 v2-only 的包它输出「Not a signed jar file」但退出码仍是 0，
+      # 于是 set -e 抓不到、grep 又匹配不到 CN，表现为「签名校验莫名失败」——
+      # 实测踩过这个坑。apksigner 能正确读v1/v2/v3 全部方案。
       - name: 校验签名（确认不是 debug key）
         working-directory: app
         run: |
           set -euo pipefail
-          keytool -printcert -jarfile build/app/outputs/flutter-apk/app-release.apk \
-            | grep -q "CN=Yinian" \
-            || { echo "::error::产物不是 Yinian 的release 签名，请检查 Secrets"; exit 1; }
-          echo "签名校验通过：CN=Yinian"
+          APK=build/app/outputs/flutter-apk/app-release.apk
+
+          # 优先用 apksigner（Android SDK 自带，认v2/v3）
+          # 注意：这里必须用 if 而不是 [ -x ] &&赋值。
+          # 那样写在测试为假时返回退出码 1，配合 set -e 会直接中断脚本——
+          # 第一个build-tools 版本不匹配就整体挂掉。
+          APKSIGNER=""
+          for cand in "$ANDROID_HOME"/build-tools/*/apksigner; do
+            if [ -x "$cand" ]; then
+              APKSIGNER="$cand"
+            fi
+          done
+          if [ -n "$APKSIGNER" ]; then
+            echo "使用 $APKSIGNER"
+            # --print-certs 会先验证签名完整性，再打印证书 DN。
+            # 注意别直接写$(...) 让 set -e 吞掉错误信息——
+            # 签名不合法时 apksigner 退出码非 0，必须自己接住并打日志。
+            if ! CERTS=$("$APKSIGNER" verify --print-certs "$APK" 2>&1); then
+              echo "::error::apksigner 校验失败，产物签名不合法或已被篡改："
+              echo "$CERTS"
+              exit 1
+            fi
+            echo "$CERTS"
+            if echo "$CERTS" | grep -q 'CN=Yinian'; then
+              echo "✓ 签名校验通过：CN=Yinian（apksigner 已验证签名完整性）"
+            else
+              echo "::error::产物证书不是 CN=Yinian，请检查 Actions Secrets 里的 keystore"
+              exit 1
+            fi
+          else
+            # 兜底：没找到 apksigner 时退回 keytool，但必须显式检查输出，
+            # 不能只靠 grep——keytool 对 v2-only 包会输出 Not a signed jar file
+            # 且退出码为 0，静默通过等于没校验。
+            echo "::warning::未找到 apksigner，退回 keytool（可能读不到 v2/v3 签名）"
+            OUT=$(keytool -printcert -jarfile "$APK" 2>&1 || true)
+            echo "$OUT"
+            if echo "$OUT" | grep -q 'Not a signed jar file'; then
+              echo "::error::该APK 无 v1 签名（META-INF/*.RSA 不存在），keytool 无法校验。"
+              echo "::error::这在 minSdk>=24 时是正常的，请确认 apksigner 可用。"
+              exit 1
+            fi
+            echo "$OUT" | grep -q "CN=Yinian" \
+              || { echo "::error::产物不是 Yinian 的 release 签名，请检查 Secrets"; exit 1; }
+            echo "✓ 签名校验通过：CN=Yinian（keytool）"
+          fi
 
       - name: 重命名 APK（带版本号）
         run: cp app/build/app/outputs/flutter-apk/app-release.apk "yinian-${{ github.ref_name }}.apk"
