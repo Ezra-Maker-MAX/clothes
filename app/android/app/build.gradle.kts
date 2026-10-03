@@ -1,3 +1,10 @@
+// 必须显式 import java.util.Properties，不能写 java.util.Properties()：
+// Gradle Kotlin DSL 里 `java` 会解析成项目级 Java 扩展（JavaPluginExtension），
+// 于是 `java.util` 被当成该扩展的属性访问 → 报"Unresolved reference 'util'"，
+// 连带 getProperty/load 全部失效，最终整个 assembleRelease 编译中断。
+// 注意：import 必须放在 plugins {} 块之前，放在后面同样编译失败。
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
@@ -9,8 +16,9 @@ plugins {
 // ① 任何人都能用同一把 debug key 生成同包名包覆盖你的安装；
 // ② debug 签名过不了任何应用商店审核。
 // 对存放私密照片的 App 这是硬伤，所以这里改成「缺配置就明确失败」。
+
 val keystorePropsFile = rootProject.file("key.properties")
-val keystoreProps = java.util.Properties().apply {
+val keystoreProps = Properties().apply {
     if (keystorePropsFile.exists()) {
         keystorePropsFile.inputStream().use { load(it) }
     }
