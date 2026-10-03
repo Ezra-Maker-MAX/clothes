@@ -58,6 +58,55 @@ export function blobAuthMode(): 'oidc' | 'token' | null {
   return null;
 }
 
+/** 私密 store 的认证模式（同样仅用于自检展示） */
+function privateAuthMode(): 'oidc' | 'token' | null {
+  if (process.env.PRIVATE_BLOB_STORE_ID) return 'oidc';
+  if (process.env.PRIVATE_BLOB_READ_WRITE_TOKEN) return 'token';
+  return null;
+}
+
+/**
+ * 私密 store 自检：**真的去列一下**能不能读。
+ *
+ * 为什么不只报 configured：私密功能 503 时，光看「变量有没有设」
+ * 完全查不出问题。可能是变量名写错、store 被删、token 过期、
+ * 或者 access 建成了 Public——这些都不体现在「有没有配」上。
+ * 直接 list 一次，Vercel 会明确告诉我们凭据行不行。
+ */
+async function privateBlobProbe() {
+  const configured = privateBlobConfigured();
+  const authMode = privateAuthMode();
+  if (!configured) {
+    return {
+      configured: false,
+      authMode: null,
+      ready: false,
+      detail: '未配置私密存储 env（PRIVATE_BLOB_*），私密图上传会返回 503。',
+    };
+  }
+  try {
+    const mod = await import('@vercel/blob');
+    const auth = privateBlobAuth();
+    const res = await (mod as { list: (o: unknown) => Promise<{ blobs?: unknown[] }> })
+      .list({ ...auth, limit: 1 });
+    return {
+      configured: true,
+      authMode,
+      ready: true,
+      blobCount: Array.isArray(res?.blobs) ? res.blobs.length : 0,
+      detail: '私密 store 可读写（已实测 list 成功）。',
+    };
+  } catch (e) {
+    return {
+      configured: true,
+      authMode,
+      ready: false,
+      detail: `凭据不可用：${e instanceof Error ? e.message : String(e)}`,
+      hint: PRIVATE_BLOB_SETUP_HINT,
+    };
+  }
+}
+
 /** Hobby 额度（官方 pricing 页，随套餐可能调整，仅用于自检提示） */
 export const BLOB_HOBBY_LIMITS = {
   storageGB: 1,
@@ -107,5 +156,9 @@ export async function blobHealth() {
     authMode: blobAuthMode(),
     detail: probe.detail,
     limits: BLOB_HOBBY_LIMITS,
+    // 私密 store 单独一段。之前这里完全没提私密 store，
+    // 于是「私密上传 503」在健康检查里看不出任何线索——
+    // 而这恰恰是最难排查的那种故障。
+    private: await privateBlobProbe(),
   };
 }
