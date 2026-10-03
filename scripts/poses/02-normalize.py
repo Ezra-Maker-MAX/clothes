@@ -14,7 +14,10 @@
   4. 补成正方形（透明底，居中），统一缩放到 768×768
   5. 存WebP q=82，体积可控
 
-输出：/tmp/posedata/norm/{poseId}_{modelId}.webp+ .json 元数据
+输出：{DST}/{poseId}_{modelId}.webp + norm_meta.json 元数据
+
+⚠️ 路径用环境变量覆盖，不要写死：第一批 205 张的中间产物在 /tmp/posedata，
+后续扩到 806 张时目录换成了 scripts/poses/raw。
 """
 import concurrent.futures as cf
 import glob
@@ -24,8 +27,10 @@ import os
 import numpy as np
 from PIL import Image
 
-SRC = "/tmp/posedata/img"
-DST = "/tmp/posedata/norm"
+# 目录可被环境变量覆盖（src/dst/meta），默认沿用第一批的位置
+SRC = os.environ.get("POSE_SRC", "/tmp/posedata/img")
+DST = os.environ.get("POSE_DST", "/tmp/posedata/norm")
+META = os.environ.get("POSE_META", "/tmp/posedata/norm_meta.json")
 SIZE = 768
 PAD_RATIO = 0.06
 BG = (255, 255, 255, 0)  # 透明底：白底在内衣试衣场景里容易和浅色衣物混
@@ -98,12 +103,15 @@ def normalize(src, dst):
 
 def main():
     os.makedirs(DST, exist_ok=True)
-    files = sorted(glob.glob(os.path.join(SRC, "*")))
+    files = sorted(f for f in glob.glob(os.path.join(SRC, "*")) if not f.endswith(".tmp"))
     print(f"[归一化] 待处理 {len(files)} 张 → {SIZE}×{SIZE} WebP")
+    print(f"         源 {SRC}\n         → {DST}")
 
     def job(f):
         base = os.path.splitext(os.path.basename(f))[0]
         dst = os.path.join(DST, base + ".webp")
+        if os.path.exists(dst) and os.path.getsize(dst) > 2000:  # 幂等：跳过已处理
+            return (base, {"outBytes": os.path.getsize(dst), "skipped": True}, None)
         try:
             meta = normalize(f, dst)
             return (base, meta, None)
@@ -117,7 +125,8 @@ def main():
                 bad.append((base, err))
             else:
                 ok += 1
-                metas[base] = meta
+                if not meta.get("skipped"):
+                    metas[base] = meta
     print(f"[归一化] 成功 {ok} 失败 {len(bad)}")
     for b, e in bad[:10]:
         print("   FAIL", b, e)
@@ -129,9 +138,17 @@ def main():
         print(f"  体积: 中位 {sizes[len(sizes)//2]/1024:.1f}KB  "
               f"最大 {sizes[-1]/1024:.1f}KB  合计 {sum(sizes)/1048576:.1f}MB")
 
-    with open("/tmp/posedata/norm_meta.json", "w", encoding="utf-8") as f:
-        json.dump(metas, f, ensure_ascii=False, indent=1)
-    print("→ /tmp/posedata/norm_meta.json")
+    # 合并写入元数据（保留上一批已处理的条目，别被这次覆盖掉）
+    prev = {}
+    if os.path.exists(META):
+        try:
+            prev = json.load(open(META, encoding="utf-8"))
+        except Exception:
+            prev = {}
+    prev.update(metas)
+    with open(META, "w", encoding="utf-8") as f:
+        json.dump(prev, f, ensure_ascii=False, indent=1)
+    print(f"→ {META}（累计 {len(prev)} 条）")
     return len(bad)
 
 

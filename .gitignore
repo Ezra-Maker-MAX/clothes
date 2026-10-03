@@ -39,3 +39,10 @@ app/android/key.properties
 #   cp /tmp/posedata/norm/*.webp assets/poses/img/
 # 保留入库的是：assets/poses/index.json（清单）+ app/lib/services/pose_library_data.g.dart（生成的姿势数据）
 assets/poses/img/
+
+# 姿势库第二批（806 条体系）的中间产物
+scripts/poses/raw/
+scripts/poses/norm/
+scripts/poses/sheets/
+scripts/poses/*.json
+__pycache__/

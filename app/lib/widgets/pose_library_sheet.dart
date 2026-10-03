@@ -40,8 +40,13 @@ class PoseLibrarySheet extends StatefulWidget {
 }
 
 class _PoseLibrarySheetState extends State<PoseLibrarySheet> {
-  PoseGroup _tab = PoseGroup.sit;
+  /// null = 不按分组过滤（配合搜索框用）
+  PoseGroup? _tab;
   String? _selectedId;
+  final TextEditingController _q = TextEditingController();
+
+  /// 当前要展示的列表。搜索优先于分组筛选。
+  late List<PosePreset> _shown;
 
   @override
   void initState() {
@@ -50,36 +55,196 @@ class _PoseLibrarySheetState extends State<PoseLibrarySheet> {
     // 已选姿势所在分组默认展示，省得用户自己找
     final p = _selectedId == null ? null : PoseLibrary.byId(_selectedId!);
     if (p != null) _tab = p.group;
+    _shown = _listOf();
   }
 
-  List<PosePreset> _listOf(PoseGroup g) => PoseLibrary.byGroup(g);
+  @override
+  void dispose() {
+    _q.dispose();
+    super.dispose();
+  }
+
+  List<PosePreset> _listOf() {
+    final kw = _q.text.trim();
+    if (kw.isNotEmpty) {
+      final hit = PoseLibrary.search(kw);
+      return _tab == null ? hit : hit.where((p) => p.group == _tab).toList();
+    }
+    if (_tab == null) {
+      // 「全部」：按分组顺序排，不然站立(320) 会把后面 18 组全挤到看不见
+      final order = {for (var i = 0; i < PoseLibrary.groupOrder.length; i++) PoseLibrary.groupOrder[i]: i};
+      final list = PoseLibrary.all.toList()
+        ..sort((a, b) => order[a.group]!.compareTo(order[b.group]!));
+      return list;
+    }
+    return PoseLibrary.byGroup(_tab!);
+  }
+
+  void _refresh() => setState(() => _shown = _listOf());
 
   @override
   Widget build(BuildContext context) {
     return SafeArea(
       child: SizedBox(
-        height: MediaQuery.of(context).size.height * 0.82,
+        height: MediaQuery.of(context).size.height * 0.88,
         child: Column(
           children: [
             _header(),
             const _PrivacyNote(),
-            _tabs(),
+            _searchBar(),
+            _groupPicker(),
+            _resultCount(),
             Expanded(
-              child: GridView.builder(
-                padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
-                // 3 列；缩略图是竖着的全身构图，格子略高于宽才不显局促
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 3,
-                  mainAxisSpacing: 10,
-                  crossAxisSpacing: 10,
-                  childAspectRatio: 0.78,
-                ),
-                itemCount: _listOf(_tab).length,
-                itemBuilder: (_, i) => _card(_listOf(_tab)[i]),
-              ),
+              child: _shown.isEmpty
+                  ? _empty()
+                  : GridView.builder(
+                      padding: const EdgeInsets.fromLTRB(12, 4, 12, 24),
+                      // 3 列；缩略图是竖着的全身构图，格子略高于宽才不显局促
+                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 3,
+                        mainAxisSpacing: 10,
+                        crossAxisSpacing: 10,
+                        childAspectRatio: 0.78,
+                      ),
+                      itemCount: _shown.length,
+                      itemBuilder: (_, i) => _card(_shown[i]),
+                    ),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _empty() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.search_off_rounded, size: 36, color: AppColors.textHint),
+          const SizedBox(height: 10),
+          Text('没有匹配的姿势',
+              style: TextStyle(fontSize: 13, color: AppColors.textSub)),
+          const SizedBox(height: 4),
+          Text('换个词试试，中英文都能搜',
+              style: TextStyle(fontSize: 11.5, color: AppColors.textHint)),
+        ],
+      ),
+    );
+  }
+
+  Widget _searchBar() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+      child: TextField(
+        controller: _q,
+        onChanged: (_) => _refresh(),
+        style: TextStyle(fontSize: 13, color: AppColors.textMain),
+        decoration: InputDecoration(
+          isDense: true,
+          hintText: '搜姿势名或动作，例：抱膝/ 侧卧 / 抬手',
+          hintStyle: TextStyle(fontSize: 12.5, color: AppColors.textHint),
+          prefixIcon: Icon(Icons.search_rounded,
+              size: 17, color: AppColors.textHint),
+          suffixIcon: _q.text.isEmpty
+              ? null
+              : IconButton(
+                  icon: Icon(Icons.close_rounded,
+                      size: 16, color: AppColors.textHint),
+                  onPressed: () {
+                    _q.clear();
+                    _refresh();
+                  },
+                ),
+          filled: true,
+          fillColor: AppColors.bg,
+          contentPadding:
+              EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: BorderSide.none,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 19 个分组塞不进横向 Tab，用下拉 +「全部」
+  Widget _groupPicker() {
+    final groups = PoseLibrary.groupOrder;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      child: Row(
+        children: [
+          Expanded(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              decoration: BoxDecoration(
+                color: AppColors.bg,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<PoseGroup?>(
+                  value: _tab,
+                  isExpanded: true,
+                  isDense: true,
+                  icon: Icon(Icons.expand_more_rounded,
+                      size: 18, color: AppColors.textSub),
+                  style: TextStyle(
+                      fontSize: 13, color: AppColors.textMain),
+                  hint: Text('全部 19 组',
+                      style:
+                          TextStyle(fontSize: 13, color: AppColors.textSub)),
+                  items: [
+                    DropdownMenuItem<PoseGroup?>(
+                      value: null,
+                      child: Text(
+                        '全部 · ${PoseLibrary.all.length} 个',
+                        style: TextStyle(
+                            fontSize: 13, color: AppColors.textMain),
+                      ),
+                    ),
+                    for (final g in groups)
+                      DropdownMenuItem<PoseGroup?>(
+                        value: g,
+                        child: Text(
+                          '${PoseLibrary.groupLabels[g]} · ${PoseLibrary.byGroup(g).length}',
+                          style: TextStyle(
+                              fontSize: 13, color: AppColors.textMain),
+                        ),
+                      ),
+                  ],
+                  onChanged: (v) {
+                    setState(() => _tab = v);
+                    _refresh();
+                  },
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _resultCount() {
+    final g = _tab;
+    final hint = g == null ? '按常用度排列' : (PoseLibrary.groupHints[g] ?? '');
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(18, 8, 18, 2),
+      child: Row(
+        children: [
+          Text('${_shown.length} 个',
+              style:
+                  TextStyle(fontSize: 11, color: AppColors.textSub)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(hint,
+                style: TextStyle(
+                    fontSize: 11, color: AppColors.textHint),
+                overflow: TextOverflow.ellipsis),
+          ),
+        ],
       ),
     );
   }
@@ -110,56 +275,6 @@ class _PoseLibrarySheetState extends State<PoseLibrarySheet> {
             icon: Icon(Icons.close_rounded, color: AppColors.textSub),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _tabs() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-      child: Row(
-        children: [
-          for (final g in PoseGroup.values)
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: _tabBtn(g),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _tabBtn(PoseGroup g) {
-    final on = g == _tab;
-    final n = _listOf(g).length;
-    return GestureDetector(
-      onTap: () => setState(() => _tab = g),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 9),
-        decoration: BoxDecoration(
-          color: on ? AppColors.primary : AppColors.bg,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-              color: on ? AppColors.primary : AppColors.divider),
-        ),
-        child: Column(
-          children: [
-            Text(PoseLibrary.groupLabels[g]!,
-                style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: on ? Colors.white : AppColors.textMain)),
-            const SizedBox(height: 1),
-            Text('$n 个',
-                style: TextStyle(
-                    fontSize: 10,
-                    color: on
-                        ? Colors.white.withValues(alpha: 0.85)
-                        : AppColors.textHint)),
-          ],
-        ),
       ),
     );
   }
@@ -279,24 +394,6 @@ class _PoseLibrarySheetState extends State<PoseLibrarySheet> {
                       height: 1.5,
                       color: AppColors.textSub)),
               const SizedBox(height: 8),
-              // 分组按源站分类，名字按实际动作 —— 不一致时如实说明，
-              // 否则用户会以为分类错了（47/232 条会命中，详见 pose_library.dart 文件头）
-              if (p.nameLooksOffGroup) ...[
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: AppColors.bg,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    '源站把这条归在「${PoseLibrary.groupLabels[p.group]}」，'
-                    '但图中实际动作如上。分组只作浏览入口，以名称为准。',
-                    style: TextStyle(fontSize: 11, height: 1.4, color: AppColors.textHint),
-                  ),
-                ),
-                const SizedBox(height: 8),
-              ],
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(10),

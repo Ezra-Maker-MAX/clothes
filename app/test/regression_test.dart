@@ -135,103 +135,130 @@ void main() {
     });
   });
 
-  group('姿势库完整性（232 条 / 205 个唯一姿势）', () {
-    // 数据来源：posemaniacs.com 女性姿势库三大类全收录。
-    // 232 条 = 205 个唯一姿势 + 27 个跨组姿势各出现两次（既是坐姿又是跪姿）。
-    // 具体数字由 scripts/gen_pose_library.py 依据源数据生成，重复运行应完全一致。
-    test('总数为 232，且三个分组数量与源数据一致', () {
-      expect(PoseLibrary.all.length, 232);
-      expect(PoseLibrary.byGroup(PoseGroup.sit).length, 121);
-      expect(PoseLibrary.byGroup(PoseGroup.kneel).length, 59);
-      expect(PoseLibrary.byGroup(PoseGroup.lie).length, 52);
-    });
-
-    test('跨组姿势共用同一个 id（同一姿势在两组里不该是两个身份）', () {
-      // 27 个姿势同时属于两类，去重后必须是 205
-      final uniq = PoseLibrary.all.map((p) => p.id).toSet();
-      expect(uniq.length, 205);
-      // 跨组的姿势，其分组合法且不止一个
-      final byId = <String, Set<PoseGroup>>{};
-      for (final p in PoseLibrary.all) {
-        byId.putIfAbsent(p.id, () => <PoseGroup>{}).add(p.group);
-      }
-      final cross = byId.values.where((g) => g.length > 1);
-      expect(cross.length, 27, reason: '跨组姿势数应与源数据一致');
-      for (final g in cross) {
-        expect(g.length, 2, reason: '一个姿势最多跨两组');
-      }
-    });
-
-    test('id 唯一且非空（id 随 options.pose 发给后端，重复会串姿势）', () {
-      final ids = PoseLibrary.all.map((p) => p.id).toList();
-      // 注意：这里只校验「同一分组内」唯一——跨组姿势本来就该重复出现
+  group('姿势库完整性（806 条 / 19 组）', () {
+    // 数据来源：posemaniacs.com 女性姿势库**总览页全量806 条**。
+    // 806 条 = 一个姿势一条，不存在跨组重复（早期版本按源站三个分类页
+    // 收 232 条，里面有 27 个姿势各出现两次，已在新体系里消除）。
+    // 数字由 scripts/poses/10-gen-catalog-all.py 从源数据生成。
+    test('总数为 806，19 个分组数量与源数据一致', () {
+      expect(PoseLibrary.all.length, 806);
+      const expected = {
+        PoseGroup.standing: 320,
+        PoseGroup.sitting: 68,
+        PoseGroup.squatting: 83,
+        PoseGroup.kneeling: 36,
+        PoseGroup.lying: 18,
+        PoseGroup.onSide: 20,
+        PoseGroup.onBack: 18,
+        PoseGroup.onStomach: 4,
+        PoseGroup.sittingChair: 28,
+        PoseGroup.handStanding: 16,
+        PoseGroup.hanging: 8,
+        PoseGroup.floating: 34,
+        PoseGroup.jump: 47,
+        PoseGroup.dance: 34,
+        PoseGroup.fight: 20,
+        PoseGroup.run: 9,
+        PoseGroup.sport: 13,
+        PoseGroup.lean: 1,
+        PoseGroup.other: 29,
+      };
+      expect(PoseGroup.values.length, expected.length,
+          reason: '分组数变了就该同步更新期望值');
+      expect(PoseLibrary.byGroup(PoseGroup.other).length, expected[PoseGroup.other]);
       for (final g in PoseGroup.values) {
-        final gids = PoseLibrary.byGroup(g).map((p) => p.id).toList();
-        expect(gids.toSet().length, gids.length,
-            reason: '分组 $g 内存在重复 id');
+        expect(PoseLibrary.byGroup(g).length, expected[g],
+            reason: '分组 $g 数量不符（实际 ${PoseLibrary.byGroup(g).length}）');
       }
-      for (final p in PoseLibrary.all) {
-        expect(p.id.trim(), isNotEmpty, reason: '有空 id');
-      }
-      expect(ids.length, 232);
+      // 各组相加必须等于总数，防止「有条目落不进任何组」
+      final sum = PoseGroup.values
+          .map((g) => PoseLibrary.byGroup(g).length)
+          .reduce((a, b) => a + b);
+      expect(sum, 806, reason: '分组数量之和 $sum ≠ 806，有姿势漏分配');
     });
 
-    test('code 全局唯一（S/K/L 三组各自连续编号，不能撞号）', () {
+    test('id 全局唯一（806 个姿势，不该有跨组重复）', () {
+      final ids = PoseLibrary.all.map((p) => p.id).toList();
+      expect(ids.toSet().length, 806);
+      final imgs = PoseLibrary.all.map((p) => p.imagePath).toList();
+      expect(imgs.toSet().length, 806,
+          reason: '有姿势共用同一张图，说明数据被写重了');
+    });
+
+    test('code 全局唯一且前缀与分组一致', () {
+      const prefix = {
+        PoseGroup.standing: 'ST-',
+        PoseGroup.sitting: 'SI-',
+        PoseGroup.squatting: 'SQ-',
+        PoseGroup.kneeling: 'KN-',
+        PoseGroup.lying: 'LY-',
+        PoseGroup.onSide: 'OS-',
+        PoseGroup.onBack: 'OB-',
+        PoseGroup.onStomach: 'OM-',
+        PoseGroup.sittingChair: 'SC-',
+        PoseGroup.handStanding: 'HS-',
+        PoseGroup.hanging: 'HG-',
+        PoseGroup.floating: 'FL-',
+        PoseGroup.jump: 'JM-',
+        PoseGroup.dance: 'DN-',
+        PoseGroup.fight: 'FG-',
+        PoseGroup.run: 'RN-',
+        PoseGroup.sport: 'SP-',
+        PoseGroup.lean: 'LN-',
+        PoseGroup.other: 'OT-',
+      };
       final codes = PoseLibrary.all.map((p) => p.code).toList();
       expect(codes.toSet().length, codes.length, reason: '存在重复编号');
-    });
-
-    test('code 前缀与分组一致（防止生成脚本把坐姿编成 K-xxx）', () {
-      const prefix = {
-        PoseGroup.sit: 'S-',
-        PoseGroup.kneel: 'K-',
-        PoseGroup.lie: 'L-',
-      };
       for (final p in PoseLibrary.all) {
         expect(p.code.startsWith(prefix[p.group]!), isTrue,
             reason: '${p.id} 的 code ${p.code} 与分组 ${p.group} 不符');
       }
     });
 
-    test('每条都有中文标签与英文 prompt（缺一条该姿势就退化成无描述）', () {
+    test('每条都有中文名、说明与英文 prompt（缺一条就退化成无描述）', () {
       for (final p in PoseLibrary.all) {
         expect(p.name.trim(), isNotEmpty, reason: '${p.id} 缺中文名');
         expect(p.desc.trim(), isNotEmpty, reason: '${p.id} 缺说明');
         expect(p.prompt.trim(), isNotEmpty, reason: '${p.id} 缺 prompt');
-        // 英文 prompt 应含英文字母；全是中文说明写错了（实际是给模型看的）
         expect(RegExp(r'[a-zA-Z]').hasMatch(p.prompt), isTrue,
             reason: '${p.id} 的 prompt 不像英文描述：${p.prompt}');
       }
     });
 
-    test('中文名重复率可控（同一 id 可复用名字，但不应大面积雷同）', () {
-      // 跨组姿势共用名字是设计使然，所以这里按 id 去重后再看唯一性
-      final names = <String, Set<String>>{};
-      for (final p in PoseLibrary.all) {
-        names.putIfAbsent(p.id, () => <String>{}).add(p.name);
-      }
-      for (final e in names.entries) {
-        expect(e.value.length, 1,
-            reason: '${e.key} 跨组时中文名不一致（同一姿势应同名）');
-      }
-      final uniqNames = names.values.map((s) => s.first).toSet();
-      expect(uniqNames.length, greaterThanOrEqualTo(190),
-          reason: '205 个姿势只有 ${uniqNames.length} 个不同名字，命名可能批量退化了');
+    test('中文名 806 条全唯一（批量套模板会导致大面积重名）', () {
+      // 这一项真的抓到过问题：第一批 205 条里有 8 条中文名完全一样，
+      // 肉眼分辨不出来（两条明显不同的姿势文案一模一样）。
+      final names = PoseLibrary.all.map((p) => p.name).toList();
+      final dup = names.where((n) => names.where((x) => x == n).length > 1).toSet();
+      expect(dup, isEmpty, reason: '重复中文名：${dup.take(5).toList()}');
     });
 
-    test('prompt 按唯一姿势互不相同（两条姿势描述雷同 = 白录入）', () {
-      // ⚠️ 必须先按 id 去重再查重：232 条里有 27 条是跨组姿势的第二次出现
-      //（同一姿势既在「坐姿」又在「跪姿」下各占一行），prompt 相同是设计使然。
-      // 真正要防的是「两个不同姿势共用一条 prompt」——实测发生过一次，
-      // 两条「坐地斜撑」文案一模一样，看图才发现一个推掌、一个低侧倾。
-      final byId = <String, String>{};
-      for (final p in PoseLibrary.all) {
-        byId.putIfAbsent(p.id, () => p.prompt);
+    test('英文 prompt 806 条全唯一（两条姿势描述雷同 = 白录入）', () {
+      // 实测发生过：两条「坐地斜撑」文案一模一样，看图才发现一个推掌、一个低侧倾。
+      final ps = PoseLibrary.all.map((p) => p.prompt).toList();
+      final dup = ps.where((x) => ps.where((y) => y == x).length > 1).toSet();
+      expect(dup, isEmpty, reason: '重复 prompt：${dup.take(3).toList()}');
+    });
+
+    test('动作细节词足够多样（防止批量套模板）', () {
+      // 「站立 · 抬手」「站立 · 抬手」这种只是复制粘贴。
+      // 换个有意义的口径：量中文名**后半段**（动作细节）的唯一率。
+      // 实测 806 条里有 774 个不同细节词，少数重复是因为真的同一动作
+      // 但角度不同（前面已有中文名全唯一的断言兜底）。
+      final tails = PoseLibrary.all
+          .map((p) => p.name.split('·').last.trim())
+          .toList();
+      final uniq = tails.toSet();
+      expect(uniq.length, greaterThanOrEqualTo(700),
+          reason: '806 条只有 ${uniq.length} 个不同动作细节，命名可能批量退化了');
+      // 单个细节词不该铺满整库
+      final worst = tails.length;
+      expect(worst, 806, reason: '细节词统计基准不对');
+      for (final t in uniq) {
+        final n = tails.where((x) => x == t).length;
+        expect(n, lessThanOrEqualTo(6),
+            reason: '动作细节「$t」被用了 $n 次，命名退化了');
       }
-      expect(byId.length, 205);
-      final prompts = byId.values.toSet();
-      expect(prompts.length, byId.length,
-          reason: '有 ${byId.length - prompts.length} 个姿势 prompt 重复');
     });
 
     test('每条都有可取的参考图路径，且路径形态受控', () {
@@ -246,7 +273,7 @@ void main() {
     test('参考图 URL 指向自家后端代理（私有 blob 不能直连）', () {
       for (final p in PoseLibrary.all) {
         final u = p.imageUri;
-        expect(u, isNotNull, reason: '${p.id} 拼不出图 URL');
+        expect(u, isNotNull, reason: '${p.id} 拼不出图URL');
         expect(u!.path, '/api/pose-image');
         expect(u.queryParameters['pathname'], p.imagePath);
       }
@@ -258,25 +285,37 @@ void main() {
       expect(PoseLibrary.byId('不存在的姿势'), isNull);
     });
 
-    test('nameLooksOffGroup 与实际数据吻合（47 条源站归类与实际动作不符）', () {
-      // 这不是数据错误，是源站分类本身有交叉（如「坐姿」组里混了跪姿图）。
-      // UI 用这个判据在详情里如实说明来源。测试锁住当前值防止误改判据。
-      final off = PoseLibrary.all.where((p) => p.nameLooksOffGroup).toList();
-      expect(off.length, 47, reason: '源站分类若修正，条数会变，同步更新本断言');
-      // 每条都必须真的有可解释的实际动作（不能是判据乱命中）
-      for (final p in off) {
-        expect(p.name.contains('·'), isTrue,
-            reason: '${p.id} 命中判据但名字格式不对：${p.name}');
-      }
-    });
-
-    test('每个分组都有可展示的标签与提示文案', () {
+    test('每个分组都有展示标签与提示文案', () {
       for (final g in PoseGroup.values) {
         expect(PoseLibrary.groupLabels[g]?.trim(), isNotEmpty, reason: '分组 $g 缺标签');
         expect(PoseLibrary.groupHints[g]?.trim(), isNotEmpty, reason: '分组 $g 缺提示');
         expect(PoseLibrary.groupLabelOf(g), contains('${PoseLibrary.byGroup(g).length}'),
-            reason: '分组 $g 的展示名里应带条目数，否则 121 条没法找');
+            reason: '分组 $g 的展示名里应带条目数');
       }
+    });
+
+    test('groupOrder 覆盖全部分组且兜底组在最后', () {
+      expect(PoseLibrary.groupOrder.length, PoseGroup.values.length);
+      expect(PoseLibrary.groupOrder.toSet().length, PoseGroup.values.length,
+          reason: 'groupOrder 有重复或漏项');
+      expect(PoseLibrary.groupOrder.last, PoseGroup.other,
+          reason: '「其他动态」是兜底组，必须排在最后，否则 Tab 中间会出现一个只有 1 条的组');
+    });
+
+    test('搜索能命中中文名、编号与英文 prompt', () {
+      expect(PoseLibrary.search(''), isEmpty, reason: '空关键词不该返回全库');
+      expect(PoseLibrary.search('  '), isEmpty, reason: '空白关键词同样不该返回全库');
+      // 精确名
+      final first = PoseLibrary.all.first;
+      expect(PoseLibrary.search(first.name).map((p) => p.id), contains(first.id));
+      // 编号
+      expect(PoseLibrary.search(first.code).map((p) => p.id), contains(first.id));
+      // 英文词：取 prompt 里最长的那个单词
+      final w = first.prompt.split(' ').reduce((a, b) => a.length >= b.length ? a : b);
+      expect(PoseLibrary.search(w).map((p) => p.id), contains(first.id),
+          reason: '搜英文 prompt 里的词「$w」没命中 ${first.id}');
+      // 搜不到的东西不该硬返回结果
+      expect(PoseLibrary.search('zzz不存在的姿势zzz'), isEmpty);
     });
   });
 
