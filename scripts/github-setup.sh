@@ -17,7 +17,10 @@
 set -euo pipefail
 
 REPO="Ezra-Maker-MAX/clothes"
-API_BASE_URL="${API_BASE_URL:-https://clothes-sand-theta.vercel.app}"
+# 后端地址。别用 guesses 填这里——填错的话 App 会报
+# HandshakeException / WRONG_VERSION_NUMBER，看起来像网络问题，
+# 实际是连错了服务器。真实域名见 public/main.dart.js（Web 产物里是权威值）。
+API_BASE_URL="${API_BASE_URL:-https://selena.ccwu.cc}"
 
 echo "============================================"
 echo " 衣念 · GitHub 配置向导"

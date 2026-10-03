@@ -2,7 +2,7 @@
 //
 // 第二阶段（数据模拟）：useMock = true，全部走 MockData。
 // 第三阶段（联调）：构建时 --dart-define=USE_MOCK=false 切真实 API；
-//   环境变量 API_BASE_URL 指定后端地址（本地联调默认 http://localhost:3001）。
+//   环境变量 API_BASE_URL 指定后端地址，默认线上 https://selena.ccwu.cc。
 //
 // ⚠️ 数据库凭证（TURSO_URL / TURSO_AUTH_TOKEN）只存在于 Vercel 函数侧，
 //    客户端永远只走 HTTPS 调 API，绝不落库凭证。
@@ -31,7 +31,12 @@ class ApiClient {
   /// --dart-define=API_BASE_URL=... 注入后端地址（本地联调 / Vercel 域名）
   static const String baseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://localhost:3001',
+    // 默认指向线上后端，而不是 localhost———
+    // 忘记传 --dart-define 时，localhost 在真机上必然连不上，
+    // 报出来的却是「HandshakeException / Connection refused」这类
+    // 看起来像网络问题的错，掩盖真正的原因（构建时漏传地址）。
+    // 本地联调请显式传：--dart-define=API_BASE_URL=http://10.0.2.2:3001
+    defaultValue: 'https://selena.ccwu.cc',
   );
 
   /// 展示用版本号（设置页「关于」）；与 pubspec.yaml 保持一致

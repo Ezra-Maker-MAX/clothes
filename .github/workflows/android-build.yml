@@ -98,6 +98,35 @@ jobs:
             echo "::error::缺少 Secret API_BASE_URL"
             exit 1
           fi
+          # 出包前先探一下后端活着没。这一步花几秒，能挡住
+          #「装到手机上才发现连不上」——那种错报的是
+          # HandshakeException / WRONG_VERSION_NUMBER，看着像网络问题，
+          # 实际是地址填错或服务没部署，白等半小时构建才发现。
+          case "$BASE_URL" in
+            https://*) ;;
+            *) echo "::error::API_BASE_URL 必须以 https:// 开头，当前：$BASE_URL"
+               echo "::error::http:// 在真机上会被系统拦截，或触发明文流量拒绝"
+               exit 1 ;;
+          esac
+          echo "→ 探测后端连通性：$BASE_URL"
+          # 注意别写 `|| echo 000`：curl 连不上时自己就会输出 000，
+          # 再追加一个就成了 "000000"，匹配不到任何 case，
+          # 结果坏地址反而走进「放行」分支——正是这道防线要拦的情况。
+          CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
+                 "$BASE_URL/api/wardrobe?userId=u_demo_0001" || true)
+          CODE=${CODE:-000}
+          echo "  HTTP=$CODE"
+          case "$CODE" in
+            2*) echo "  ✓ 后端正常" ;;
+            4*) echo "  ✓ 后端有响应（4xx 说明域名对、服务在，只是这个请求参数不全）" ;;
+            000|5*)
+              echo "::error::后端连不上或返回 5xx（HTTP=$CODE）。"
+              echo "::error::API_BASE_URL 填错，或服务未部署 / 正在重启。"
+              echo "::error::拿不准就在浏览器打开 $BASE_URL 看是否有页面。"
+              exit 1 ;;
+            *)  echo "::error::意外的状态码 HTTP=$CODE，请人工确认 $BASE_URL" ; exit 1 ;;
+          esac
+
           flutter build apk --release \
             --dart-define=USE_MOCK=false \
             --dart-define=API_BASE_URL="$BASE_URL"
